@@ -2,6 +2,7 @@
 // (normalized 0..1 <-> real units), display text and which knobs show on the slot card.
 #pragma once
 #include "Common.h"
+#include <cstdio>
 #include <string>
 
 namespace hv
