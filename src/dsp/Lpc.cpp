@@ -53,11 +53,14 @@ void envelopeDb (const double* a, int p, double sr, float gain, float* outDb) no
     {
         const double f = std::min ((double) i * kEnvMaxHz / (kEnvPoints - 1), nyq * 0.995);
         const double w = 2.0 * kPiD * f / sr;
-        double re = 0.0, im = 0.0;
-        for (int j = 0; j <= p; ++j)
+        // Horner evaluation of A(z) at z^-1 = e^{-jw}: one phasor, no per-tap trig
+        const double zr = std::cos (w), zi = -std::sin (w);
+        double re = a[p], im = 0.0;
+        for (int j = p - 1; j >= 0; --j)
         {
-            re += a[j] * std::cos (w * j);
-            im -= a[j] * std::sin (w * j);
+            const double nr = re * zr - im * zi + a[j];
+            const double ni = re * zi + im * zr;
+            re = nr; im = ni;
         }
         const double mag = std::sqrt (re * re + im * im);
         outDb[i] = (float) (20.0 * std::log10 (g / std::max (mag, 1.0e-9)));

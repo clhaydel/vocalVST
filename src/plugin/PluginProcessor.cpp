@@ -364,6 +364,14 @@ void HarshVoxProcessor::setStateInformation (const void* data, int sizeInBytes)
         currentPresetName = tree.getProperty ("preset", "Init").toString();
         tree.removeChild (tree.getChildWithName ("Captures"), nullptr);
         apvts.replaceState (tree);
+        // APVTS skips parameters whose snapped value already matches the tree (e.g. a bool sitting at a raw
+        // 0.74), so push every stored value explicitly to guarantee an exact restore.
+        for (auto* p : plist)
+        {
+            auto child = tree.getChildWithProperty ("id", p->getParameterID());
+            const float norm = child.isValid() ? p->convertTo0to1 ((float) child.getProperty ("value")) : p->getDefaultValue();
+            if (p->getValue() != norm) p->setValueNotifyingHost (norm);
+        }
         if (prepared) refreshLatency();
     }
 }

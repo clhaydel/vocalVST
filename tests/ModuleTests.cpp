@@ -168,3 +168,22 @@ TEST_CASE ("Sample-rate independence of key frequencies", "[modules][samplerate]
         for (double p : peaks) REQUIRE (p == Catch::Approx (2290.0).epsilon (0.02));
     }
 }
+
+TEST_CASE ("Formant Mirror targets stay in the speech band", "[modules][formant]")
+{
+    const double sr = 48000;
+    std::vector<Signal> in; double fsr = 0;
+    REQUIRE (readWav (juce::File (juce::String (HV_SOURCE_DIR) + "/test_vocals/cmu_spoken_slt.wav"), in, fsr));
+    ModuleRig rig (ModuleType::FormantFreeze, fsr);
+    rig.setParam ("Target", 5);  // Mirror
+    Signal x (in[0].begin(), in[0].begin() + (long) (1.5 * fsr));
+    rig.run (x);
+    for (int i = 0; i < 5; ++i)
+    {
+        const float f = rig.shared.targetFormants[(size_t) i].load();
+        INFO ("F" << (i + 1) << " = " << f << "  bw " << rig.shared.targetFormants[(size_t) i + 5].load());
+        CHECK (f > 150.0f);
+        CHECK (f < 9001.0f);
+    }
+    juce::ignoreUnused (sr);
+}

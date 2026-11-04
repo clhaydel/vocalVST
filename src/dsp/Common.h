@@ -194,6 +194,12 @@ struct Biquad
         set (A * ((A + 1) + (A - 1) * c + sa), -2 * A * ((A - 1) + (A + 1) * c), A * ((A + 1) + (A - 1) * c - sa),
              (A + 1) - (A - 1) * c + sa, 2 * ((A - 1) - (A + 1) * c), (A + 1) - (A - 1) * c - sa);
     }
+    /** Formant band-pass with 0 dB peak at f and the given -3 dB bandwidth (parallel formant bank). */
+    void formantBand (double sr, double f, double bw)
+    {
+        f = clampFreq (f, sr);
+        bandpass (sr, f, std::clamp (f / std::max (10.0, bw), 0.3, 60.0));
+    }
     /** Klatt-style formant resonator with unity DC gain: frequency + bandwidth in Hz. */
     void resonator (double sr, double f, double bw)
     {
@@ -205,6 +211,16 @@ struct Biquad
         set (g, 0, 0, 1, A1, A2);
     }
 
+    /** Complex frequency response at f (for tests/UI). */
+    std::array<double, 2> response (double sr, double f) const
+    {
+        const double w = 2.0 * kPiD * f / sr;
+        const double cr = std::cos (w), ci = -std::sin (w), c2r = std::cos (2 * w), c2i = -std::sin (2 * w);
+        const double nr = b0 + b1 * cr + b2 * c2r, ni = b1 * ci + b2 * c2i;
+        const double dr = 1 + a1 * cr + a2 * c2r, di = a1 * ci + a2 * c2i;
+        const double den = dr * dr + di * di;
+        return { (nr * dr + ni * di) / den, (ni * dr - nr * di) / den };
+    }
     /** Magnitude response at frequency f (for tests/UI). */
     double magnitude (double sr, double f) const
     {

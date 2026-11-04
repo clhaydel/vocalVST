@@ -271,7 +271,7 @@ public:
         {
             auto& s = ch[(size_t) c];
             const bool pipe = choice (pTarget) == tPipe;
-            for (int r = 0; r < 5; ++r) s.res[(size_t) r].resonator (sr, curF[r], curB[r]);
+            for (int r = 0; r < 5; ++r) s.res[(size_t) r].formantBand (sr, curF[r], curB[r]);
             // closed tube: inverted-feedback waveguide, resonances at (2n-1) c / 4L across the whole band
             const float pipeDelay = clampf (2.0f * sm[pPipe].current() / 343.0f * (float) sr, 4.0f, (float) s.tube.size() - 8.0f);
             const float wallLoss = clampf (0.97f - 0.06f * std::log2 (sm[pBw].current() * 2.0f), 0.6f, 0.985f);
@@ -288,7 +288,11 @@ public:
                     e = yv;
                 }
                 else
-                    for (auto& r : s.res) e = r.process (e);
+                {   // parallel formant bank in the pre-emphasised (flat) domain, gentle per-formant tilt
+                    float acc = 0.06f * e;
+                    for (int r = 0; r < 5; ++r) acc += kFormantGain[r] * s.res[(size_t) r].process (e);
+                    e = acc;
+                }
                 float y = s.deemph.process (e) * 4.0f;
                 const float iR = s.inRms.process (in), oR = s.outRms.process (y);
                 const float tg = clampf ((iR + 1.0e-6f) / (oR + 1.0e-6f), 0.0f, 32.0f);
@@ -315,6 +319,9 @@ private:
         float gain = 1.0f;
     };
     std::array<Ch, 2> ch;
+public:
+    static constexpr float kFormantGain[5] = { 1.0f, 0.71f, 0.5f, 0.35f, 0.25f };
+private:
     float curF[5] {}, curB[5] {};
     bool smoothInit = false;
     float fmSmooth = 0.01f, gainC = 0.01f;
