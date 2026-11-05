@@ -200,11 +200,19 @@ int main (int argc, char* argv[])
     juce::ScopedJuceInitialiser_GUI init;
     juce::StringArray a;
     for (int i = 1; i < argc; ++i) a.add (argv[i]);
-    if (a.isEmpty()) { std::cerr << "usage: hv_cli render|bench|gen-vocals|list-presets [options]\n"; return 1; }
+    if (a.isEmpty()) { std::cerr << "usage: hv_cli render|bench|levels|gen-vocals|list-presets|export-code [options]\n"; return 1; }
     if (a[0] == "render") return cmdRender (a);
     if (a[0] == "bench") return cmdBench (a);
     if (a[0] == "gen-vocals") return cmdGenVocals (a);
     if (a[0] == "levels") return cmdLevels (a);
+    if (a[0] == "export-code")   // hv_cli export-code <preset.hvx> [name]
+    {
+        HarshVoxProcessor p;
+        const juce::File f (juce::File::getCurrentWorkingDirectory().getChildFile (a[1]));
+        if (! p.loadPresetFile (f)) { std::cerr << "cannot load " << f.getFullPathName() << "\n"; return 1; }
+        std::printf ("%s", exportPresetCode (p, a.size() > 2 ? a[2] : f.getFileNameWithoutExtension()).toRawUTF8());
+        return 0;
+    }
     if (a[0] == "list-presets") { for (int i = 0; i < numFactoryPresets(); ++i) std::printf ("%s\n", factoryPresetName (i).toRawUTF8()); return 0; }
     std::cerr << "unknown command\n";
     return 1;

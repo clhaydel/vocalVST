@@ -25,6 +25,20 @@ PresetBuilder& PresetBuilder::set (const char* name, float real)
 
 PresetBuilder& PresetBuilder::mix (float pct) { p.setParamReal (slotIndex (cur, SMix), pct); return *this; }
 PresetBuilder& PresetBuilder::out (float db) { p.setParamReal (slotIndex (cur, SOut), db); return *this; }
+PresetBuilder& PresetBuilder::on (bool enabled) { p.setParamReal (slotIndex (cur, SOn), enabled ? 1.0f : 0.0f); return *this; }
+
+PresetBuilder& PresetBuilder::capture (std::initializer_list<float> freqs, std::initializer_list<float> bws)
+{
+    Formants f;
+    f.count = (int) std::min<size_t> (freqs.size(), (size_t) kMaxFormants);
+    int i = 0;
+    for (float v : freqs) if (i < kMaxFormants) f.freq[i++] = v;
+    i = 0;
+    for (float v : bws) if (i < kMaxFormants) f.bw[i++] = v;
+    p.engine().slotShared (cur).setCaptured (f);
+    return *this;
+}
+
 PresetBuilder& PresetBuilder::global (int g, float real) { p.setParamReal (g, real); return *this; }
 
 PresetBuilder& PresetBuilder::mod (int m, int source, int s, const char* paramName, float amount, int curve, float thr, float smoothMs)
@@ -133,6 +147,91 @@ const Factory kFactory[] = {
 
 int numFactoryPresets() { return (int) std::size (kFactory); }
 juce::String factoryPresetName (int i) { return i >= 0 && i < numFactoryPresets() ? kFactory[i].name : ""; }
+
+namespace
+{
+juce::String num (float v, bool integral)
+{
+    if (integral) return juce::String ((int) std::lround (v));
+    juce::String s (v, 4);
+    while (s.containsChar ('.') && s.endsWithChar ('0')) s = s.dropLastCharacters (1);
+    if (s.endsWithChar ('.')) s = s.dropLastCharacters (1);
+    if (! s.containsChar ('.')) return s;   // exact integer: plain literal converts fine
+    return s + "f";
+}
+
+const char* typeEnumName (int t)
+{
+    static const char* const n[] = { "Empty", "SourceDrive", "PeriodDoubler", "FryGate", "FormantFreeze", "Splitter",
+                                      "SyllableShuffle", "CuppedMic", "ContactMic", "ModalRattle", "MembraneBuzz",
+                                      "CarrierVocoder", "SalivaClicks", "Mob" };
+    return n[std::clamp (t, 0, kNumModuleTypes - 1)];
+}
+
+bool differs (float a, float b) { return std::abs (a - b) > 1.0e-4f * std::max (1.0f, std::abs (b)); }
+} // namespace
+
+juce::String exportPresetCode (HarshVoxProcessor& p, const juce::String& name)
+{
+    const auto defs = buildParamDefs();
+    juce::String o;
+    o << "    { \"" << name.replace ("\"", "'") << "\", [] (PresetBuilder& b) {\n";
+    for (int s = 0; s < kNumSlots; ++s)
+    {
+        const int t = p.slotType (s);
+        if (t <= 0) continue;
+        const auto& specs = moduleInfo (t).params;
+        juce::String line;
+        line << "        b.slot (" << s << ", MT::" << typeEnumName (t) << ")";
+        for (int k = 0; k < (int) specs.size(); ++k)
+        {
+            const auto& sp = specs[(size_t) k];
+            const float v = sp.toReal (p.param (slotIndex (s, SP0 + k))->getValue());
+            if (differs (v, sp.toReal (sp.toNorm (sp.def))))
+                line << ".set (\"" << sp.name << "\", " << num (v, ! sp.continuous()) << ")";
+        }
+        const float mixV = p.paramReal (slotIndex (s, SMix)), outV = p.paramReal (slotIndex (s, SOut));
+        if (differs (mixV, 100.0f)) line << ".mix (" << num (mixV, false) << ")";
+        if (differs (outV, 0.0f)) line << ".out (" << num (outV, false) << ")";
+        if (p.paramReal (slotIndex (s, SOn)) < 0.5f) line << ".on (false)";
+        const auto cap = p.engine().slotShared (s).getCaptured();
+        if (cap.count > 0)
+        {
+            juce::String fs, bs;
+            for (int i = 0; i < cap.count; ++i)
+            {
+                fs << (i ? ", " : "") << num (cap.freq[i], false);
+                bs << (i ? ", " : "") << num (cap.bw[i], false);
+            }
+            line << ".capture ({ " << fs << " }, { " << bs << " })";
+        }
+        if (s >= kMainSlots) line << ";   // send " << slotLabel (s) << "\n";
+        else line << ";\n";
+        o << line;
+    }
+    static const char* const gNames[] = { "InGain", "OutGain", "Mix", "Seed", "EnvAtk", "EnvRel" };
+    for (int g = 0; g < kNumGlobal; ++g)
+    {
+        const float v = p.paramReal (g);
+        if (differs (v, defs[(size_t) g].def)) o << "        b.global (" << gNames[g] << ", " << num (v, g == Seed) << ");\n";
+    }
+    static const char* const srcNames[] = { "SrcNone", "SrcEnvelope", "SrcPitch", "SrcPitchConf", "SrcVoiced", "SrcFricative", "SrcPlosive" };
+    for (int m = 0; m < kNumMods; ++m)
+    {
+        const int src = (int) std::lround (p.paramReal (modIndex (m, MSrc)));
+        const int tgt = (int) std::lround (p.paramReal (modIndex (m, MTgt)));
+        if (src <= 0 || tgt <= 0) continue;
+        const int s = (tgt - 1) / kTargetsPerSlot, k = (tgt - 1) % kTargetsPerSlot;
+        const int t = p.slotType (s);
+        juce::String pname = k == kParamsPerSlot ? "Mix" : (k < (int) moduleInfo (t).params.size() ? moduleInfo (t).params[(size_t) k].name : "");
+        if (pname.isEmpty()) { o << "        // mod " << (m + 1) << " targets an unused parameter (skipped)\n"; continue; }
+        o << "        b.mod (" << m << ", " << srcNames[std::clamp (src, 0, kNumSources - 1)] << ", " << s << ", \"" << pname << "\", "
+          << num (p.paramReal (modIndex (m, MAmt)), false) << ", " << (int) std::lround (p.paramReal (modIndex (m, MCurve))) << ", "
+          << num (p.paramReal (modIndex (m, MThr)), false) << ", " << num (p.paramReal (modIndex (m, MSmooth)), false) << ");\n";
+    }
+    o << "    } },\n";
+    return o;
+}
 
 void applyFactoryPreset (HarshVoxProcessor& p, int index)
 {

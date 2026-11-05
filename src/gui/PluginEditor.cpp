@@ -110,12 +110,15 @@ void HarshVoxEditor::showPresetMenu()
     m.addSubMenu ("User", user, ! files.isEmpty());
     m.addItem (900, "Load preset file...");
     m.addItem (901, "Reveal user preset folder");
+    m.addSeparator();
+    m.addItem (902, "Export preset as code (copy to clipboard)");
     m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&presetButton).withMinimumWidth (260), [this, files] (int r)
     {
         if (r <= 0) return;
         if (r < 900) proc.setCurrentProgram (r - 1);
         else if (r >= 1000) proc.loadPresetFile (files[r - 1000]);
         else if (r == 901) { HarshVoxProcessor::userPresetFolder().createDirectory(); HarshVoxProcessor::userPresetFolder().revealToUser(); }
+        else if (r == 902) exportPreset();
         else if (r == 900)
         {
             chooser = std::make_unique<juce::FileChooser> ("Load Harsh Vox preset", HarshVoxProcessor::userPresetFolder(), "*.hvx");
@@ -123,6 +126,27 @@ void HarshVoxEditor::showPresetMenu()
                                   [this] (const juce::FileChooser& fc) { if (fc.getResult().existsAsFile()) proc.loadPresetFile (fc.getResult()); });
         }
     });
+}
+
+void HarshVoxEditor::exportPreset()
+{
+    auto* w = new juce::AlertWindow ("Export preset as code", "Name for this preset:", juce::MessageBoxIconType::NoIcon, this);
+    w->addTextEditor ("name", proc.currentPresetName == "Init" ? juce::String ("My Preset") : proc.currentPresetName);
+    w->addButton ("Export", 1, juce::KeyPress (juce::KeyPress::returnKey));
+    w->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+    w->enterModalState (true, juce::ModalCallbackFunction::create ([this, w] (int r)
+    {
+        if (r != 1) return;
+        const auto name = w->getTextEditorContents ("name").trim();
+        const auto code = exportPresetCode (proc, name.isEmpty() ? juce::String ("Untitled") : name);
+        juce::SystemClipboard::copyTextToClipboard (code);
+        auto dir = HarshVoxProcessor::userPresetFolder().getChildFile ("Exports");
+        dir.createDirectory();
+        auto f = dir.getNonexistentChildFile (juce::File::createLegalFileName (name.isEmpty() ? "Untitled" : name), ".txt");
+        f.replaceWithText (code);
+        juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::InfoIcon, "Preset exported",
+            "Copied to the clipboard and saved to:\n" + f.getFullPathName() + "\n\nPaste it into the preset list (src/plugin/Presets.cpp).", "OK", this);
+    }), true);
 }
 
 void HarshVoxEditor::paint (juce::Graphics& g)

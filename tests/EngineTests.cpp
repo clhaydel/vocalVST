@@ -164,3 +164,37 @@ TEST_CASE ("Modulation slot drives its target", "[engine][modulation]")
     renderProc (p, x, sr);
     REQUIRE (p.engine().slotShared (0).liveNorm[0].load() > 0.3f);
 }
+
+TEST_CASE ("Preset export emits builder code for the current settings", "[engine][presets]")
+{
+    HarshVoxProcessor p;
+    applyFactoryPreset (p, 10);   // Swallowed Tongue: 3 slots + a mod
+    p.setParamReal (slotIndex (2, SOn), 0.0f);
+    p.setParamReal (Seed, 42.0f);
+    const auto code = exportPresetCode (p, "Test Export");
+    INFO (code);
+    REQUIRE (code.contains ("{ \"Test Export\", [] (PresetBuilder& b) {"));
+    REQUIRE (code.contains ("b.slot (0, MT::FormantFreeze).set (\"Target\", 5).set (\"Pivot\", 1300)"));
+    REQUIRE (code.contains ("b.slot (1, MT::SalivaClicks).set (\"Density\", 200)"));
+    REQUIRE (code.contains (".on (false)"));
+    REQUIRE (code.contains ("b.global (Seed, 42);"));
+    REQUIRE (code.contains ("b.mod (0, SrcEnvelope, 0, \"Tract Mix\", -0.5f, 0, 0.3f, 40);"));
+}
+
+TEST_CASE ("Preset export round-trips through an .hvx file", "[engine][presets]")
+{
+    HarshVoxProcessor p;
+    applyFactoryPreset (p, 6);   // Gagged: splitter + V1 send
+    Formants f; f.count = 2; f.freq[0] = 640; f.freq[1] = 1190; f.bw[0] = 80; f.bw[1] = 95;
+    p.engine().slotShared (1).setCaptured (f);
+    const auto file = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("hv_export_test.hvx");
+    REQUIRE (p.savePresetFile (file));
+    HarshVoxProcessor q;
+    REQUIRE (q.loadPresetFile (file));
+    const auto code = exportPresetCode (q, "Gagged Copy");
+    INFO (code);
+    REQUIRE (code.contains ("b.slot (8, MT::ContactMic)"));
+    REQUIRE (code.contains ("// send V1"));
+    REQUIRE (code.contains (".capture ({ 640, 1190 }, { 80, 95 })"));
+    file.deleteFile();
+}

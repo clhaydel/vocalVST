@@ -82,7 +82,12 @@ scripts/run_pluginval.sh                          # pluginval, strictness 8
 ```
 
 The VST3 lands in `build/HarshVox_artefacts/Release/VST3/Harsh Vox.vst3`; copy it to `~/.vst3/`.
-User presets are saved as `.hvx` files under `~/.config/Static Ruin/Harsh Vox/Presets` on Linux.
+User presets are saved as `.hvx` files under `~/.config/Static Ruin/Harsh Vox/Presets` on Linux
+(`%APPDATA%\Static Ruin\Harsh Vox\Presets` on Windows).
+
+**Turning your settings into factory presets:** preset menu → *Export preset as code*. This copies a ready-to-paste
+`kFactory` entry for `src/plugin/Presets.cpp` to the clipboard and saves it to `Presets/Exports/<name>.txt`.
+`hv_cli export-code <file.hvx> [name]` does the same for a saved `.hvx`.
 
 ## Verification status
 

@@ -17,6 +17,7 @@ private:
     void selectSlot (int s);
     void showPresetMenu();
     void stepPreset (int delta);
+    void exportPreset();
     juce::Rectangle<int> headerArea() const { return getLocalBounds().removeFromTop (48); }
 
     HarshVoxProcessor& proc;
