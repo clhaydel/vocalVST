@@ -67,7 +67,14 @@ tools/          hv_cli (render / bench / levels / gen-vocals), hv_ui_snapshot
   path, plus 1 ms of limiter lookahead. It is recomputed whenever a module or window changes. Slot and
   global dry paths are delay-compensated.
 
-## Build
+## Download (Windows VST3)
+
+Every push to `main` builds the Windows x64 VST3 with GitHub Actions (`.github/workflows/build-windows.yml`) and
+runs the unit tests on Windows. Grab **HarshVox-windows-x64-vst3** from the latest run's *Artifacts* on the
+[Actions page](https://github.com/clhaydel/vocalVST/actions). Pushing a `v*` tag also attaches the zip to a
+GitHub Release. Unzip it and copy `Harsh Vox.vst3` to `C:\Program Files\Common Files\VST3\`.
+
+## Build (development)
 
 Linux needs the usual JUCE dev packages (`libfreetype-dev libfontconfig-dev libx11-dev libxrandr-dev
 libxinerama-dev libxcursor-dev libxext-dev libasound2-dev`), CMake ≥ 3.22 and Ninja.
