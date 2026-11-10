@@ -90,7 +90,10 @@ void Engine::prepare (double sampleRate, int maxBlk)
     dryStore.setSize (2, kMaxSubBlock);
     for (auto& b : pathStore) b.setSize (2, kMaxSubBlock);
     mono.assign ((size_t) kMaxSubBlock, 0.0f);
+    inGL.assign ((size_t) kMaxSubBlock, 0.0f);
+    inGR.assign ((size_t) kMaxSubBlock, 0.0f);
     globalDry.prepare ((int) (4.5 * sr));
+    globalDryR.prepare ((int) (4.5 * sr));
     inGainS.prepare (sr, 20.0f);
     outGainS.prepare (sr, 20.0f);
     mixS.prepare (sr, 20.0f);
@@ -113,6 +116,7 @@ void Engine::reset()
         s.active = -1;
     }
     globalDry.reset();
+    globalDryR.reset();
     inGainS.snap (dbToGain (P.get (InGain)));
     outGainS.snap (dbToGain (P.get (OutGain)));
     mixS.snap (P.get (Mix) * 0.01f);
@@ -332,12 +336,26 @@ void Engine::processSub (const float* inL, const float* inR, float* outL, float*
     mixS.setTarget (P.get (Mix) * 0.01f);
     ana.setEnvelopeTimes (P.get (EnvAtk), P.get (EnvRel));
 
+    // Stereo mode keeps L/R separate through the chain and the global dry path; mono mode (or a mono
+    // input bus) sums to mono up front. Analysis always runs on the mono sum.
+    const bool stereoIn = inR != nullptr && P.get (InputMode) >= 0.5f;
     float ip = 0.0f;
     for (int i = 0; i < n; ++i)
     {
-        const float x = inR != nullptr ? 0.5f * (inL[i] + inR[i]) : inL[i];
-        mono[(size_t) i] = sanitize (x * inGainS.next(), 16.0f);
-        ip = std::max (ip, std::abs (mono[(size_t) i]));
+        const float g = inGainS.next();
+        if (stereoIn)
+        {
+            inGL[(size_t) i] = sanitize (inL[i] * g, 16.0f);
+            inGR[(size_t) i] = sanitize (inR[i] * g, 16.0f);
+            mono[(size_t) i] = 0.5f * (inGL[(size_t) i] + inGR[(size_t) i]);
+            ip = std::max ({ ip, std::abs (inGL[(size_t) i]), std::abs (inGR[(size_t) i]) });
+        }
+        else
+        {
+            const float x = inR != nullptr ? 0.5f * (inL[i] + inR[i]) : inL[i];
+            mono[(size_t) i] = sanitize (x * g, 16.0f);
+            ip = std::max (ip, std::abs (mono[(size_t) i]));
+        }
     }
     inPeak.store (std::max (ip, inPeak.load (std::memory_order_relaxed)), std::memory_order_relaxed);
 
@@ -345,9 +363,12 @@ void Engine::processSub (const float* inL, const float* inR, float* outL, float*
     computeModulation();
 
     chainView.setDataToReferTo (chainStore.getArrayOfWritePointers(), 2, n);
-    for (int c = 0; c < 2; ++c) std::copy (mono.begin(), mono.begin() + n, chainView.getWritePointer (c));
+    const float* srcL = stereoIn ? inGL.data() : mono.data();
+    const float* srcR = stereoIn ? inGR.data() : mono.data();
+    std::copy (srcL, srcL + n, chainView.getWritePointer (0));
+    std::copy (srcR, srcR + n, chainView.getWritePointer (1));
 
-    bool stereo = false, sendsUsed = false;
+    bool stereo = stereoIn, sendsUsed = false;
     int latency = 0;
     for (int s = 0; s < kMainSlots; ++s)
     {
@@ -364,10 +385,11 @@ void Engine::processSub (const float* inL, const float* inR, float* outL, float*
     float* R = chainView.getWritePointer (1);
     for (int i = 0; i < n; ++i)
     {
-        const float d = globalDry.process (mono[(size_t) i], latency);
+        const float dL = globalDry.process (srcL[i], latency);
+        const float dR = globalDryR.process (srcR[i], latency);
         const float m = mixS.next(), g = outGainS.next();
-        L[i] = dcL.process ((d * (1.0f - m) + L[i] * m) * g);
-        R[i] = dcR.process ((d * (1.0f - m) + R[i] * m) * g);
+        L[i] = dcL.process ((dL * (1.0f - m) + L[i] * m) * g);
+        R[i] = dcR.process ((dR * (1.0f - m) + R[i] * m) * g);
     }
     limiter.process (L, R, n);
     float pl = 0.0f, pr = 0.0f;

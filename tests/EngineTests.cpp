@@ -198,3 +198,86 @@ TEST_CASE ("Preset export round-trips through an .hvx file", "[engine][presets]"
     REQUIRE (code.contains (".capture ({ 640, 1190 }, { 80, 95 })"));
     file.deleteFile();
 }
+
+namespace
+{
+/** Render separate L/R signals through a processor (block size 128). */
+std::vector<Signal> renderStereo (HarshVoxProcessor& p, const Signal& l, const Signal& r, double sr, int block = 128)
+{
+    p.setPlayConfigDetails (2, 2, sr, block);
+    p.prepareToPlay (sr, block);
+    juce::AudioBuffer<float> buf (2, block);
+    juce::MidiBuffer midi;
+    std::vector<Signal> out (2, Signal (l.size(), 0.0f));
+    for (size_t pos = 0; pos < l.size(); pos += (size_t) block)
+    {
+        const int len = (int) std::min<size_t> ((size_t) block, l.size() - pos);
+        buf.setSize (2, len, false, false, true);
+        std::copy (l.begin() + (long) pos, l.begin() + (long) pos + len, buf.getWritePointer (0));
+        std::copy (r.begin() + (long) pos, r.begin() + (long) pos + len, buf.getWritePointer (1));
+        p.processBlock (buf, midi);
+        for (int c = 0; c < 2; ++c) std::copy (buf.getReadPointer (c), buf.getReadPointer (c) + len, out[(size_t) c].begin() + (long) pos);
+    }
+    return out;
+}
+}
+
+TEST_CASE ("Input Mode: stereo keeps L/R, mono sums; default is stereo and presets keep it", "[engine][stereo]")
+{
+    const double sr = 48000;
+    const Signal l = synthVoice (VoiceStyle::Sung, sr, 0.6, 3);
+    const Signal r ((size_t) l.size(), 0.0f);   // hard-left source
+
+    SECTION ("default is stereo, and survives factory and Init preset loads")
+    {
+        HarshVoxProcessor p;
+        REQUIRE (p.paramReal (InputMode) == (float) InputStereo);
+        p.setParamReal (InputMode, (float) InputMono);
+        applyFactoryPreset (p, 1);
+        REQUIRE (p.paramReal (InputMode) == (float) InputMono);
+        applyFactoryPreset (p, 0);
+        REQUIRE (p.paramReal (InputMode) == (float) InputMono);
+        REQUIRE (! exportPresetCode (p, "x").contains ("InputMode"));
+    }
+    SECTION ("empty chain: stereo passes L/R through, mono puts the sum on both sides")
+    {
+        HarshVoxProcessor st;
+        auto ys = renderStereo (st, l, r, sr);
+        const int L = st.getLatencySamples();
+        double eL = 0, eR = 0;
+        for (size_t i = 0; i + (size_t) L < l.size(); ++i) { eL += ys[0][i + (size_t) L] * ys[0][i + (size_t) L]; eR += ys[1][i] * ys[1][i]; }
+        REQUIRE (eL > 1.0);
+        REQUIRE (eR < 1.0e-9 * eL);
+
+        HarshVoxProcessor mo;
+        mo.setParamReal (InputMode, (float) InputMono);
+        auto ym = renderStereo (mo, l, r, sr);
+        REQUIRE (std::memcmp (ym[0].data(), ym[1].data(), ym[0].size() * sizeof (float)) == 0);
+    }
+    SECTION ("dual-mono input in stereo mode equals mono mode (mono-chain modules)")
+    {
+        for (auto t : { ModuleType::SourceDrive, ModuleType::PeriodDoubler, ModuleType::CuppedMic, ModuleType::SalivaClicks })
+        {
+            HarshVoxProcessor a, b;
+            a.setSlotType (0, t); b.setSlotType (0, t);
+            b.setParamReal (InputMode, (float) InputMono);
+            auto ya = renderStereo (a, l, l, sr), yb = renderStereo (b, l, l, sr);
+            INFO (moduleInfo (t).name);
+            REQUIRE (std::memcmp (ya[0].data(), yb[0].data(), ya[0].size() * sizeof (float)) == 0);
+            REQUIRE (std::memcmp (ya[1].data(), yb[1].data(), ya[1].size() * sizeof (float)) == 0);
+        }
+    }
+}
+
+TEST_CASE ("Saliva Clicks at 100% mix outputs only clicks (no dry voice)", "[engine][modules]")
+{
+    const double sr = 48000;
+    const auto x = synthVoice (VoiceStyle::Spoken, sr, 1.0, 5);
+    HarshVoxProcessor p;
+    PresetBuilder b (p);
+    b.slot (0, ModuleType::SalivaClicks).set ("Density", 0);   // no clicks at all -> silence
+    auto y = renderProc (p, x, sr);
+    double e = 0;
+    for (float v : y[0]) e += (double) v * v;
+    REQUIRE (e < 1.0e-12);
+}

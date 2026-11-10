@@ -83,8 +83,8 @@ private:
     // scratch buffers (preallocated)
     juce::AudioBuffer<float> chainStore, dryStore, pathStore[3];
     juce::AudioBuffer<float> chainView, pathView[3];
-    std::vector<float> mono;
-    CompDelay globalDry;
+    std::vector<float> mono, inGL, inGR;   // analysis sum; gained L/R input (stereo mode)
+    CompDelay globalDry, globalDryR;
     Smoother inGainS, outGainS, mixS;
     DcBlocker dcL, dcR;
     Limiter limiter;

@@ -329,6 +329,7 @@ private:
 
 //==============================================================================
 // 4.12 Saliva Clicks — tiny band-passed noise bursts filtered through the live tract.
+// Output is the clicks alone (v0.2): Mix 100% = clicks only, Mix 50% + 6 dB = the old "voice + clicks".
 class SalivaClicks final : public ModuleBase
 {
 public:
@@ -381,7 +382,7 @@ public:
             const float g = f.gainForSample (i) * 6.0f + 1.0e-4f;
             const float y = deemph.process (synth.process (click * g, f.kForSample (i), f.lpcOrder));
             const float add = sanitize (y * level);
-            for (int c = 0; c < nch; ++c) buf.getWritePointer (c)[i] += add;
+            for (int c = 0; c < nch; ++c) buf.getWritePointer (c)[i] = add;   // wet = clicks only; slot Mix brings the voice back
         }
         setLive (pDensity, std::min (400.0f, lastRate));
     }

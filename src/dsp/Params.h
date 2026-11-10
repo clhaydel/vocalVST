@@ -12,7 +12,8 @@ constexpr int kSendSlots = 6;               // splitter sub-chains: voiced A/B, 
 constexpr int kNumSlots  = kMainSlots + kSendSlots;
 constexpr int kNumMods   = 4;
 
-enum Global { InGain, OutGain, Mix, Seed, EnvAtk, EnvRel, kNumGlobal };
+enum Global { InGain, OutGain, Mix, Seed, EnvAtk, EnvRel, InputMode, kNumGlobal };
+enum InputModeChoice { InputMono = 0, InputStereo = 1 };
 enum ModField { MSrc, MTgt, MAmt, MCurve, MThr, MSmooth, kModFields };
 enum SlotField { SType, SOn, SMix, SOut, SP0, kSlotFields = SP0 + kParamsPerSlot };
 
@@ -53,6 +54,12 @@ inline std::vector<ParamDef> buildParamDefs()
     set (Seed,    { "seed", "Seed", 0, 9999, 1, true });
     set (EnvAtk,  { "env_atk", "Env Attack", 1, 5, 2 });
     set (EnvRel,  { "env_rel", "Env Release", 30, 100, 60 });
+    {
+        // Setup option rather than sound design: factory/user preset loads keep the current value.
+        ParamDef im { "input_mode", "Input Mode", 0, 1, (float) InputStereo };
+        im.choices = { "Mono", "Stereo" };
+        set (InputMode, im);
+    }
     for (int m = 0; m < kNumMods; ++m)
     {
         const std::string p = "m" + std::to_string (m + 1) + "_", n = "Mod " + std::to_string (m + 1) + " ";

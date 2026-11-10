@@ -97,8 +97,8 @@ const Factory kFactory[] = {
     { "Gagged", [] (PresetBuilder& b) {
         b.slot (0, MT::Splitter).set ("Voiced", 0).set ("Fricative", -120).set ("Plosive", -120).set ("Sensitivity", 55);
         b.slot (8, MT::ContactMic).set ("Tissue", 1.0f).set ("Bone", 6).set ("Clip", 6).set ("De-ess", 100);   // V1 send: muffle the voiced path
-        b.slot (1, MT::ContactMic).set ("Tissue", 0.7f).set ("Bone", 12).set ("Clip", 18).set ("De-ess", 100);
-        b.slot (2, MT::SalivaClicks).set ("Density", 140).set ("Click Len", 0.7f).set ("Fric Weight", 0.3f).set ("Level", 3).out (-4);
+        b.slot (1, MT::ContactMic).set ("Tissue", 0.7f).set ("Bone", 12).set ("Clip", 18).set ("De-ess", 100).out (2);
+        b.slot (2, MT::SalivaClicks).set ("Density", 140).set ("Click Len", 0.7f).set ("Fric Weight", 0.3f).set ("Level", 3).mix (50).out (2);
     } },
 
     { "Drainpipe", [] (PresetBuilder& b) {
@@ -120,8 +120,8 @@ const Factory kFactory[] = {
     } },
 
     { "Swallowed Tongue", [] (PresetBuilder& b) {
-        b.slot (0, MT::FormantFreeze).set ("Target", 5).set ("Pivot", 1300).set ("Tract Mix", 100);
-        b.slot (1, MT::SalivaClicks).set ("Density", 200).set ("Fric Weight", 0.7f);
+        b.slot (0, MT::FormantFreeze).set ("Target", 5).set ("Pivot", 1300).set ("Tract Mix", 100).out (6);
+        b.slot (1, MT::SalivaClicks).set ("Density", 200).set ("Fric Weight", 0.7f).mix (50).out (6);
         b.slot (2, MT::SourceDrive).set ("Drive", 12).set ("Formant", 100).out (-1);
         b.mod (0, SrcEnvelope, 0, "Tract Mix", -0.5f, 0, 0.3f, 40.0f);
     } },
@@ -209,9 +209,11 @@ juce::String exportPresetCode (HarshVoxProcessor& p, const juce::String& name)
         else line << ";\n";
         o << line;
     }
-    static const char* const gNames[] = { "InGain", "OutGain", "Mix", "Seed", "EnvAtk", "EnvRel" };
+    static const char* const gNames[] = { "InGain", "OutGain", "Mix", "Seed", "EnvAtk", "EnvRel", "InputMode" };
+    static_assert (std::size (gNames) == kNumGlobal);
     for (int g = 0; g < kNumGlobal; ++g)
     {
+        if (g == InputMode) continue;   // setup option, not part of a preset
         const float v = p.paramReal (g);
         if (differs (v, defs[(size_t) g].def)) o << "        b.global (" << gNames[g] << ", " << num (v, g == Seed) << ");\n";
     }

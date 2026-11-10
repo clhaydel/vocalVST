@@ -300,7 +300,8 @@ void HarshVoxProcessor::resetToDefaults()
 {
     const auto defs = buildParamDefs();
     for (int i = 0; i < kNumParams; ++i)
-        plist[(size_t) i]->setValueNotifyingHost (plist[(size_t) i]->getDefaultValue());
+        if (i != InputMode)   // setup option: survives preset changes
+            plist[(size_t) i]->setValueNotifyingHost (plist[(size_t) i]->getDefaultValue());
     for (int s = 0; s < kNumSlots; ++s) eng.slotShared (s).setCaptured (Formants {});
 }
 
@@ -408,6 +409,7 @@ bool HarshVoxProcessor::loadPresetFile (const juce::File& f)
     // apply through parameters so the host is notified
     for (int i = 0; i < kNumParams; ++i)
     {
+        if (i == InputMode) continue;   // setup option: survives preset changes
         auto* p = plist[(size_t) i];
         auto child = tree.getChildWithProperty ("id", p->getParameterID());
         if (child.isValid()) p->setValueNotifyingHost (p->convertTo0to1 ((float) child.getProperty ("value")));

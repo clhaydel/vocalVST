@@ -24,7 +24,7 @@ private:
     ui::LookAndFeel laf;
     juce::TooltipWindow tooltips { this, 600 };
 
-    juce::TextButton presetButton, prevButton { "<" }, nextButton { ">" }, saveButton { "SAVE" }, modButton { "MOD" };
+    juce::TextButton presetButton, prevButton { "<" }, nextButton { ">" }, saveButton { "SAVE" }, modButton { "MOD" }, inputButton { "STEREO" };
     std::vector<std::unique_ptr<ui::ParamKnob>> globals;
     ui::Meter inMeter, outMeter;
     ui::ChainView chain;

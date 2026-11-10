@@ -8,6 +8,7 @@ membranes. Little of it is plain clipping.
 ![Harsh Vox UI](docs/screenshot.png)
 
 - **Format:** VST3 (JUCE 8.0.9, C++20, CMake). Mono or stereo in → stereo out, 44.1–192 kHz.
+- **Version:** see [CHANGELOG.md](CHANGELOG.md) for what changed in each release and how versions are numbered.
 - **Chain:** 8 drag-to-reorder slots (any module, duplicates allowed) + 6 splitter send slots.
 - **Static by design:** no LFOs, drift or accumulating state. Everything is input-reactive or seeded-deterministic,
   so the same input and settings give bit-identical output (covered by tests).
@@ -27,7 +28,7 @@ membranes. Little of it is plain clipping.
 | 4.9 | **Modal Rattle** | 20–60 two-pole modes (plate / Bessel drum / odd-harmonic pipe) or dispersive spring loop, with collision non-linearity and contact clicks, stereo modes |
 | 4.10 | **Membrane Buzz** | Voice-driven membrane resonator slapping a one-sided stop → band-passed buzz (kazoo / mirliton) |
 | 4.11 | **Organic Carrier Vocoder** | Poisson stream of damped-sinusoid pings (Crackle / Gravel / Sizzle / Wet) shaped by the LPC tract or a 32-band filterbank; optional pitch lock |
-| 4.12 | **Saliva Clicks** | Envelope- and fricative-driven micro noise bursts filtered through the live tract |
+| 4.12 | **Saliva Clicks** | Envelope- and fricative-driven micro noise bursts filtered through the live tract. Outputs the clicks alone: Mix sets the voice/click balance |
 | 4.13 | **Mob** | 4–16 seeded PSOLA copies (delay, pitch, formant scale, pan, ±15-cent micro-jitter), each gated at its own threshold |
 
 **Factory presets:** Init, Unintelligible Scream, Inhuman Growl, Industrial Hiss, Speaking Gravel, Riot, Gagged,
@@ -69,10 +70,13 @@ tools/          hv_cli (render / bench / levels / gen-vocals), hv_ui_snapshot
 
 ## Download (Windows VST3)
 
-Every push to `main` builds the Windows x64 VST3 with GitHub Actions (`.github/workflows/build-windows.yml`) and
-runs the unit tests on Windows. Grab **HarshVox-windows-x64-vst3** from the latest run's *Artifacts* on the
-[Actions page](https://github.com/clhaydel/vocalVST/actions). Pushing a `v*` tag also attaches the zip to a
-GitHub Release. Unzip it and copy `Harsh Vox.vst3` to `C:\Program Files\Common Files\VST3\`.
+Tagged versions are on the [Releases page](https://github.com/clhaydel/vocalVST/releases) as
+`HarshVox-<version>-windows-x64-vst3.zip`. Unzip it and copy `Harsh Vox.vst3` to `C:\Program Files\Common Files\VST3\`.
+
+Every push to `main` also builds the Windows x64 VST3 with GitHub Actions (`.github/workflows/build-windows.yml`) and
+runs the unit tests on Windows. In-between builds are under *Artifacts* on the run pages of the
+[Actions page](https://github.com/clhaydel/vocalVST/actions). Pushing a `v*` tag that matches the CMake version
+publishes a Release, using that version's CHANGELOG section as the notes.
 
 ## Build (development)
 
@@ -98,7 +102,7 @@ User presets are saved as `.hvx` files under `~/.config/Static Ruin/Harsh Vox/Pr
 
 ## Verification status
 
-- **Unit tests: 20 cases, 748 assertions, all passing.**
+- **Unit tests: 24 cases, 776 assertions, all passing.**
   - silence in → silence out for every module
   - no NaN/Inf on white noise, full-scale squares, DC and impulses at extreme settings
   - bit-identical determinism for modules and for every preset
@@ -107,6 +111,7 @@ User presets are saved as `.hvx` files under `~/.config/Static Ruin/Harsh Vox/Pr
   - YIN accuracy, LPC stability (|k| < 1) and exact lattice reconstruction
   - epoch spacing, classifier and onsets
   - limiter ceiling, state round-trip (including captured formants), drag-reorder and modulation
+  - stereo vs mono input mode (L/R kept apart, dual-mono identical to mono), Saliva clicks-only output
 - **pluginval:** strictness 8, SUCCESS.
 - **CPU** (Intel N100, 48 kHz / 128): analysis + global 3.5%, single modules +0.1 to +1.5% each,
   every module active (8 slots + sends) ≈ 11% of one core.
@@ -124,8 +129,9 @@ User presets are saved as `.hvx` files under `~/.config/Static Ruin/Harsh Vox/Pr
   transparent.
 - **Syllable Reverse/Shuffle** reports window + 12 ms (onset-detection delay) + 64 samples of latency.
 - **Mob.** PSOLA grain half-width is capped at 8 ms so the 30 ms minimum delay always has recorded material.
-- **Stereo input** is summed to mono for the whole chain, not only for analysis. Mob and Modal Rattle create
-  the stereo image, and modules after them process both channels independently.
+- **Input Mode** (global button, default **Stereo**). In Stereo, left and right run separately through every
+  slot and the global dry path. In Mono, the input is summed first, and only Mob and Modal Rattle create a stereo
+  image. Analysis (LPC, pitch, classifier) always uses the mono sum. Presets don't change this setting.
 - **Splitter sends** belong to the first active splitter in the chain. Splitters nested in sends are not
   offered.
 - **Test vocals.** `test_vocals/` holds synthetic spoken/sung/screamed/whispered takes plus CMU ARCTIC read

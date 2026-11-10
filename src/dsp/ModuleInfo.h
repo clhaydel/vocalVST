@@ -199,7 +199,7 @@ inline const std::vector<ModuleInfo>& moduleCatalogue()
             { "Density Max", Map::Log, 50, 8000, 3000, "/s", {}, true, true },
             { "Ping Low", Map::Log, 100, 12000, 1000, "Hz" },
             { "Ping High", Map::Log, 100, 12000, 6000, "Hz" },
-            { "Ping Decay", Map::Log, 0.2f, 20, 2, "ms", {}, true },
+            { "Ping Decay", Map::Log, 0.2f, 2, 1, "ms", {}, true },   // v0.2: max was 20 ms (farty above 2 ms)
             { "Env Source", Map::Choice, 0, 1, 0, "", { "LPC", "Filterbank" } },
             { "Pitch Lock", Map::Toggle, 0, 1, 0, "", {}, true },
             { "React Amt", Map::Linear, -1, 1, 1, "" },

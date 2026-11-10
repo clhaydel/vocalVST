@@ -32,7 +32,14 @@ HarshVoxEditor::HarshVoxEditor (HarshVoxProcessor& p)
     modButton.setClickingTogglesState (true);
     modButton.setTooltip ("Show the input-reactive modulation matrix");
     modButton.onClick = [this] { detail.setVisible (! modButton.getToggleState()); modPanel.setVisible (modButton.getToggleState()); };
-    for (auto* b : { &presetButton, &prevButton, &nextButton, &saveButton, &modButton }) addAndMakeVisible (b);
+    inputButton.setTooltip ("Input: STEREO keeps left/right separate through the chain; MONO sums the input to mono first. "
+                            "Analysis always uses the mono sum. Not changed by presets.");
+    inputButton.onClick = [this]
+    {
+        const bool stereo = proc.paramReal (InputMode) >= 0.5f;
+        proc.setParamReal (InputMode, stereo ? (float) InputMono : (float) InputStereo);
+    };
+    for (auto* b : { &presetButton, &prevButton, &nextButton, &saveButton, &modButton, &inputButton }) addAndMakeVisible (b);
 
     const std::pair<int, const char*> g[] = { { InGain, "Input" }, { EnvAtk, "Env Atk" }, { EnvRel, "Env Rel" },
                                               { Seed, "Seed" }, { Mix, "Mix" }, { OutGain, "Output" } };
@@ -86,8 +93,9 @@ void HarshVoxEditor::timerCallback()
     if (modPanel.isVisible()) modPanel.tick();
     analysis.tick (selected);
     presetButton.setButtonText (proc.currentPresetName);
+    inputButton.setButtonText (proc.paramReal (InputMode) >= 0.5f ? "STEREO" : "MONO");
     const auto lt = juce::String (proc.getLatencySamples() * 1000.0 / std::max (1.0, proc.getSampleRate()), 1) + " ms";
-    if (lt != latencyText) { latencyText = lt; repaint (headerArea()); }
+    if (lt != latencyText) { latencyText = lt; repaint (getLocalBounds().withTrimmedTop (48).removeFromTop (78)); }
 }
 
 void HarshVoxEditor::stepPreset (int delta)
@@ -159,8 +167,10 @@ void HarshVoxEditor::paint (juce::Graphics& g)
     g.setColour (line);
     g.drawHorizontalLine ((int) h.getBottom() - 1, 0.0f, (float) getWidth());
     drawHarshVoxWordmark (g, 16.0f, h.getCentreY() - 10.0f, 20.0f);
-    const float lw = staticRuinLogoWidth (11.0f);
-    drawStaticRuinLogo (g, h.getRight() - lw - 16.0f, h.getCentreY() - 5.5f, 11.0f, true);
+    // company mark: full brightness, ~70% of the product wordmark's cap height (house layout)
+    constexpr float logoCap = 14.0f;
+    const float lw = staticRuinLogoWidth (logoCap);
+    drawStaticRuinLogo (g, h.getRight() - lw - 18.0f, h.getCentreY() - logoCap * 0.5f, logoCap, false);
 
     // global strip background + labels
     auto gs = getLocalBounds().withTrimmedTop (48).removeFromTop (78).reduced (8, 6).toFloat();
@@ -170,8 +180,9 @@ void HarshVoxEditor::paint (juce::Graphics& g)
     BlockFont::draw (g, "OUT", gs.getRight() - 30.0f, gs.getY() + 8.0f, 7.0f, textDim);
     g.setFont (monoFont (11.0f));
     g.setColour (textDim);
-    g.drawText ("LATENCY " + latencyText, juce::Rectangle<float> (gs.getRight() - 300.0f, gs.getY(), 220.0f, gs.getHeight()).toNearestInt(),
-                juce::Justification::centredRight);
+    const juce::Rectangle<float> info (gs.getRight() - 300.0f, gs.getY(), 220.0f, gs.getHeight());
+    g.drawText ("LATENCY " + latencyText, info.withTrimmedBottom (gs.getHeight() * 0.5f - 2.0f).toNearestInt(), juce::Justification::bottomRight);
+    g.drawText ("v" HV_VERSION_STRING, info.withTrimmedTop (gs.getHeight() * 0.5f + 2.0f).toNearestInt(), juce::Justification::topRight);
 }
 
 void HarshVoxEditor::resized()
@@ -190,6 +201,7 @@ void HarshVoxEditor::resized()
     auto knobs = gs.withTrimmedLeft (60).withTrimmedRight (60);
     for (auto& k : globals) k->setBounds (knobs.removeFromLeft (74));
     modButton.setBounds (knobs.removeFromLeft (70).withSizeKeepingCentre (56, 26).translated (10, 0));
+    inputButton.setBounds (knobs.removeFromLeft (84).withSizeKeepingCentre (72, 26).translated (10, 0));
 
     r.reduce (8, 0);
     r.removeFromBottom (8);
