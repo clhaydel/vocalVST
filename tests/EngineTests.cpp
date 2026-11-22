@@ -281,3 +281,27 @@ TEST_CASE ("Saliva Clicks at 100% mix outputs only clicks (no dry voice)", "[eng
     for (float v : y[0]) e += (double) v * v;
     REQUIRE (e < 1.0e-12);
 }
+
+TEST_CASE ("Carrier Vocoder Analyze: Local follows the upstream module, Dry follows the plugin input", "[engine][modules]")
+{
+    const double sr = 48000;
+    const auto x = synthVoice (VoiceStyle::Spoken, sr, 1.5, 9);
+    // Upstream Contact Mic (24 dB/oct low-pass) strips the highs. A Dry vocoder still sees the full-band
+    // input; a Local one should inherit the darkness.
+    auto hfShare = [&] (int analyze)
+    {
+        HarshVoxProcessor p;
+        PresetBuilder b (p);
+        b.slot (0, ModuleType::ContactMic).set ("Tissue", 1.0f).set ("De-ess", 100);
+        b.slot (1, ModuleType::CarrierVocoder).set ("Analyze", (float) analyze).set ("Ping Low", 200).set ("Ping High", 10000);
+        auto y = renderProc (p, x, sr);
+        double hf = 0, all = 0;
+        Biquad hp; hp.highpass (sr, 3000.0, 0.707);
+        for (float v : y[0]) { const float h = hp.process (v); hf += (double) h * h; all += (double) v * v; }
+        REQUIRE (all > 1.0e-6);
+        return hf / all;
+    };
+    const double dry = hfShare (0), local = hfShare (1);
+    INFO ("HF share dry " << dry << " local " << local);
+    REQUIRE (local < 0.5 * dry);
+}

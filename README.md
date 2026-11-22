@@ -27,7 +27,7 @@ membranes. Little of it is plain clipping.
 | 4.8 | **Contact / Throat Mic** | Tissue compression, 24 dB/oct LPF, bone resonances, full-depth de-esser, seeded "flesh" impulse response |
 | 4.9 | **Modal Rattle** | 20–60 two-pole modes (plate / Bessel drum / odd-harmonic pipe) or dispersive spring loop, with collision non-linearity and contact clicks, stereo modes |
 | 4.10 | **Membrane Buzz** | Voice-driven membrane resonator slapping a one-sided stop → band-passed buzz (kazoo / mirliton) |
-| 4.11 | **Organic Carrier Vocoder** | Poisson stream of damped-sinusoid pings (Crackle / Gravel / Sizzle / Wet) shaped by the LPC tract or a 32-band filterbank; optional pitch lock |
+| 4.11 | **Organic Carrier Vocoder** | Poisson stream of damped-sinusoid pings (Crackle / Gravel / Sizzle / Wet) shaped by the LPC tract or a 32-band filterbank; optional pitch lock. **Analyze: Local** follows the slot's own (processed) input instead of the dry voice |
 | 4.12 | **Saliva Clicks** | Envelope- and fricative-driven micro noise bursts filtered through the live tract. Outputs the clicks alone: Mix sets the voice/click balance |
 | 4.13 | **Mob** | 4–16 seeded PSOLA copies (delay, pitch, formant scale, pan, ±15-cent micro-jitter), each gated at its own threshold |
 
@@ -59,8 +59,8 @@ tools/          hv_cli (render / bench / levels / gen-vocals), hv_ui_snapshot
   parameters arrive as APVTS atomics.
 - **Analysis tap.** Analysis runs once per 64-sample sub-block on the dry (mono-summed) input and is kept
   in ~1.2 s history rings. Each slot receives an `AnalysisFrame` delayed by the latency upstream of it, so
-  LPC, pitch and epochs stay aligned with the audio that slot actually hears. Source Drive and Formant
-  Freeze also offer **Analyze: Local**, which runs their own LPC on their input.
+  LPC, pitch and epochs stay aligned with the audio that slot actually hears. Source Drive, Formant
+  Freeze and Organic Carrier Vocoder also offer **Analyze: Local**, which runs their own LPC on their input.
 - **Parameters.** Each slot has Type, On, Mix, Output and 12 generic parameters. Their host-visible names
   and value text follow the module in the slot ("S1 Drive"), and the host is notified when a slot changes
   module.
@@ -102,7 +102,7 @@ User presets are saved as `.hvx` files under `~/.config/Static Ruin/Harsh Vox/Pr
 
 ## Verification status
 
-- **Unit tests: 24 cases, 776 assertions, all passing.**
+- **Unit tests: 25 cases, 779 assertions, all passing.**
   - silence in → silence out for every module
   - no NaN/Inf on white noise, full-scale squares, DC and impulses at extreme settings
   - bit-identical determinism for modules and for every preset

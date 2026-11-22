@@ -129,6 +129,7 @@ int cmdBench (const juce::StringArray& a)
         p.setSlotType (0, ModuleType::CarrierVocoder);
         PresetBuilder b (p); b.slot (0, ModuleType::CarrierVocoder).set ("Env Source", 1);
     });
+    runChain ("Vocoder (local LPC)", [] (HarshVoxProcessor& p) { PresetBuilder b (p); b.slot (0, ModuleType::CarrierVocoder).set ("Analyze", 1); });
     runChain ("Mob (16 voices)", [] (HarshVoxProcessor& p) { PresetBuilder b (p); b.slot (0, ModuleType::Mob).set ("Voices", 16); });
     runChain ("Modal Rattle (60 modes)", [] (HarshVoxProcessor& p) { PresetBuilder b (p); b.slot (0, ModuleType::ModalRattle).set ("Modes", 60); });
     runChain ("8 heavy slots", [] (HarshVoxProcessor& p)

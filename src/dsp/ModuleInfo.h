@@ -204,6 +204,7 @@ inline const std::vector<ModuleInfo>& moduleCatalogue()
             { "Pitch Lock", Map::Toggle, 0, 1, 0, "", {}, true },
             { "React Amt", Map::Linear, -1, 1, 1, "" },
             { "React Thr", Map::Linear, -60, 0, -50, "dB" },
+            { "Analyze", Map::Choice, 0, 1, 0, "", { "Dry", "Local" } },   // v0.3: Local = follow the slot's input
         } },
         { "Saliva Clicks", "SALIVA", {
             { "Density", Map::Linear, 0, 400, 60, "/s", {}, true, true },

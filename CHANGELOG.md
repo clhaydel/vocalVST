@@ -12,6 +12,14 @@ binary, the version shown in the UI, saved state, and the name of the Windows zi
 line, add a section here, commit, and push a matching tag (`git tag v0.3.0 && git push origin v0.3.0`).
 CI refuses a tag that doesn't match the CMake version and uses this file's section as the release notes.
 
+## [Unreleased] (0.3.0)
+
+### Added
+- **Organic Carrier Vocoder: Analyze (Dry / Local)**, default Dry, so existing presets are unchanged. Local
+  takes the vowel shape (LPC tract), its loudness and the envelope that drives Density/React from the
+  slot's own input, so modules before it shape the result. Dry uses the shared analysis of the plugin
+  input, as before. Pitch Lock always uses the shared pitch tracker. Local costs about +0.8% CPU per Carrier.
+
 ## [0.2.0]
 
 ### Added

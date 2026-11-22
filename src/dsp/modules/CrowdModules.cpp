@@ -226,7 +226,7 @@ class CarrierVocoder final : public ModuleBase
 {
 public:
     CarrierVocoder() : ModuleBase (ModuleType::CarrierVocoder) {}
-    enum { pType, pDensMin, pDensMax, pPingLo, pPingHi, pDecay, pEnvSrc, pPitchLock, pReactAmt, pReactThr };
+    enum { pType, pDensMin, pDensMax, pPingLo, pPingHi, pDecay, pEnvSrc, pPitchLock, pReactAmt, pReactThr, pAnalyze };
     enum { Crackle, Gravel, Sizzle, Wet };
     static constexpr int kMaxPings = 128, kBands = 32;
 
@@ -243,6 +243,8 @@ public:
             bandEnv[(size_t) b].prepare (sr); bandEnv[(size_t) b].setTimes (2.0f, 25.0f);
         }
         rmsC = onePoleCoeff (10.0f, sr);
+        localLpc.prepare (sr, false);
+        localEnv.prepare (sr);
     }
     void resetModule() override
     {
@@ -254,6 +256,8 @@ public:
         for (auto& b : bandsS) b.reset();
         for (auto& e : bandEnv) e.reset();
         cms = 0.0f;
+        localLpc.reset();
+        localEnv.reset();
         rng.seedWith (lastSeed == ~0ULL ? 13 : lastSeed, 0xca77);
         lastType = -1;
     }
@@ -267,6 +271,10 @@ public:
         const float decayMs = block (pDecay, n);
         const bool filterbank = choice (pEnvSrc) == 1, pitchLock = raw (pPitchLock) >= 0.5f;
         const float rAmt = block (pReactAmt, n), rThr = raw (pReactThr);
+        // Analyze: Dry = shared analysis of the plugin input (default); Local = LPC tract, LPC gain and the
+        // density envelope come from this slot's own input, so upstream modules shape the result.
+        // Pitch Lock always uses the shared pitch tracker (pitch on processed audio is unreliable).
+        const bool local = choice (pAnalyze) == 1;
         if (type != lastType)
         {
             lastType = type;
@@ -278,8 +286,17 @@ public:
 
         for (int i = 0; i < n; ++i)
         {
+            // slot input (mono sum), read before sample i is overwritten below
+            const float in = nch > 1 ? 0.5f * (buf.getReadPointer (0)[i] + buf.getReadPointer (1)[i]) : buf.getReadPointer (0)[i];
+            float envDb = f.envDb[i];
+            if (local)
+            {
+                localLpc.processSample (in);
+                envDb = gainToDb (localEnv.process (in));
+            }
+
             // ---- carrier: impulse events
-            const float drive = reactDrive (f.envDb[i], rThr, 36.0f);
+            const float drive = reactDrive (envDb, rThr, 36.0f);
             const float follow = rAmt >= 0.0f ? lerp (1.0f, drive, rAmt) : lerp (1.0f, 1.0f - drive, -rAmt);
             const float density = dMin * std::pow (dMax / dMin, follow);
             lastDensity = density;
@@ -316,12 +333,13 @@ public:
             float y;
             if (! filterbank)
             {
-                const float g = f.gainForSample (i);
-                y = deemph.process (synth.process (cn * g * 1.25f, f.kForSample (i), f.lpcOrder));
+                const float g = local ? localLpc.currentGain() : f.gainForSample (i);
+                const float* k = local ? localLpc.currentK() : f.kForSample (i);
+                const int order = local ? localLpc.order() : f.lpcOrder;
+                y = deemph.process (synth.process (cn * g * 1.25f, k, order));
             }
             else
             {
-                const float in = nch > 1 ? 0.5f * (buf.getReadPointer (0)[i] + buf.getReadPointer (1)[i]) : buf.getReadPointer (0)[i];
                 y = 0.0f;
                 for (int b = 0; b < kBands; ++b)
                 {
@@ -371,6 +389,8 @@ private:
     float rateAcc = 0.0f, nextThresh = 1.0f, cms = 0.0f, rmsC = 0.01f;
     Pcg32 rng;
     LatticeSynthesis synth;
+    LpcAnalyzer localLpc;          // Analyze: Local
+    EnvelopeFollower localEnv;
     DeEmphasis deemph;
     Biquad post1, post2;
     struct RmsDummy { void prepare (double, float) {} } carrierRms;
