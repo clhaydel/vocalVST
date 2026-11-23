@@ -5,66 +5,238 @@ namespace hv
 {
 using namespace params;
 using namespace ui;
+using Rc = juce::Rectangle<float>;
+using Pt = juce::Point<float>;
 
+namespace
+{
+/** Preset drum behind the PROGRAM window: current preset with its neighbours rolling off the cylinder. */
+class ProgramWindow final : public juce::Component, public juce::SettableTooltipClient
+{
+public:
+    explicit ProgramWindow (HarshVoxProcessor& p) : proc (p) { setMouseCursor (juce::MouseCursor::PointingHandCursor); }
+    std::function<void()> onClick;
+    void mouseDown (const juce::MouseEvent&) override { if (onClick) onClick(); }
+    void update()
+    {
+        if (proc.currentPresetName != shown) { shown = proc.currentPresetName; repaint(); }
+    }
+    void paint (juce::Graphics& g) override
+    {
+        const auto r = getLocalBounds().toFloat();
+        juce::ColourGradient drum (juce::Colour::fromFloatRGBA (0.30f, 0.28f, 0.22f, 1), 0, r.getY(), juce::Colour::fromFloatRGBA (0.30f, 0.28f, 0.22f, 1), 0, r.getBottom(), false);
+        drum.addColour (0.25, juce::Colour::fromFloatRGBA (0.86f, 0.81f, 0.66f, 1));
+        drum.addColour (0.5, juce::Colour::fromFloatRGBA (0.95f, 0.91f, 0.77f, 1));
+        drum.addColour (0.75, juce::Colour::fromFloatRGBA (0.86f, 0.81f, 0.66f, 1));
+        g.setGradientFill (drum);
+        g.fillRoundedRectangle (r, 3.0f);
+        const int n = numFactoryPresets();
+        int cur = -1;
+        for (int i = 0; i < n; ++i) if (factoryPresetName (i) == shown) cur = i;
+        auto line = [&] (const juce::String& s, float y, float size, float alpha)
+        {
+            g.setFont (tagFont (size));
+            g.setColour (palette::black.withAlpha (alpha));
+            g.drawFittedText (s, Rc (r.getX() + 18.0f, y - size, r.getWidth() - 36.0f, size * 2.0f).toNearestInt(), juce::Justification::centred, 1, 0.7f);
+        };
+        auto label = [] (int i) { return juce::String (i + 1).paddedLeft ('0', 2) + "  " + factoryPresetName (i).toUpperCase(); };
+        if (cur >= 0)
+        {
+            line (label ((cur - 1 + n) % n), r.getY() + 7.0f, 9.0f, 0.35f);
+            line (label ((cur + 1) % n), r.getBottom() - 7.0f, 9.0f, 0.35f);
+            line (label (cur), r.getCentreY(), 15.0f, 1.0f);
+        }
+        else line ("USER  " + shown.toUpperCase(), r.getCentreY(), 15.0f, 1.0f);
+        g.setColour (palette::red.withAlpha (0.85f));
+        g.drawLine (r.getX() + 4, r.getCentreY(), r.getX() + 14, r.getCentreY(), 1.2f);
+        g.drawLine (r.getRight() - 14, r.getCentreY(), r.getRight() - 4, r.getCentreY(), 1.2f);
+        g.setGradientFill (juce::ColourGradient (juce::Colours::white.withAlpha (0.22f), r.getX(), r.getY(), juce::Colours::white.withAlpha (0.0f),
+                                                 r.getX() + r.getWidth() * 0.4f, r.getBottom(), false));
+        g.fillRoundedRectangle (r, 3.0f);
+    }
+
+private:
+    HarshVoxProcessor& proc;
+    juce::String shown;
+};
+} // namespace
+
+//==============================================================================
+class HarshVoxEditor::Panel final : public juce::Component, private juce::Timer
+{
+public:
+    Panel (HarshVoxEditor& e, HarshVoxProcessor& p)
+        : ed (e), proc (p), program (p), vuIn (&p.engine().inPeak, nullptr, "INPUT"), vuOut (&p.engine().outPeakL, &p.engine().outPeakR, "OUTPUT"),
+          inputMode (p, InputMode, 1.0f), chain (p), detail (p), modPanel (p), analysis (p)
+    {
+        using namespace layout;
+        setOpaque (true);
+        program.setBounds (programWin.toNearestInt());
+        program.onClick = [this] { ed.showPresetMenu (&program); };
+        program.setTooltip ("Click for presets: factory, user, load / save, export as code");
+        prev.placeAt (prevBtn);
+        next.placeAt (nextBtn);
+        store.placeAt (storeBtn);
+        prev.onClick = [this] { ed.stepPreset (-1); };
+        next.onClick = [this] { ed.stepPreset (1); };
+        store.onClick = [this] { ed.savePreset(); };
+        store.setTooltip ("Save the current settings as a user preset (.hvx)");
+        powerLamp.placeAt (layout::powerLamp);
+        powerLamp.setLit (true);
+        limitLamp.placeAt (layout::limitLamp);
+        vuIn.setArea (layout::vuIn);
+        vuOut.setArea (layout::vuOut);
+        for (auto* c : { (juce::Component*) &program, (juce::Component*) &prev, (juce::Component*) &next, (juce::Component*) &store,
+                         (juce::Component*) &powerLamp, (juce::Component*) &limitLamp, (juce::Component*) &vuIn, (juce::Component*) &vuOut })
+            addAndMakeVisible (c);
+
+        KnobLook gl;
+        gl.r = masterKnobR; gl.numbers = true; gl.labelSize = 8.6f; gl.tagSize = 7.4f;
+        const std::pair<int, const char*> g[] = { { InGain, "Input" }, { EnvAtk, "Env Atk" }, { EnvRel, "Env Rel" }, { Mix, "Mix" }, { OutGain, "Output" } };
+        for (int i = 0; i < 5; ++i)
+        {
+            globals.push_back (std::make_unique<ParamKnob> (proc, g[i].first, -1, -1, gl));
+            globals.back()->setLabel (g[i].second);
+            globals.back()->placeAt ({ masterKnobX[i], knobRowY });
+            addAndMakeVisible (*globals.back());
+        }
+        KnobLook sl;
+        sl.r = seedR; sl.seedDial = true; sl.labelSize = 8.6f; sl.tagSize = 7.4f;
+        seed = std::make_unique<ParamKnob> (proc, Seed, -1, -1, sl);
+        seed->setLabel ("Seed");
+        seed->placeAt (seedDial);
+        addAndMakeVisible (*seed);
+        inputMode.setTexts ("STEREO", "MONO", "INPUT MODE");
+        inputMode.placeAt (inputModeSw);
+        inputMode.setTooltip ("STEREO keeps left/right separate through the chain; MONO sums the input first. Not changed by presets.");
+        addAndMakeVisible (inputMode);
+        modView.setTexts ("MATRIX", "CHAIN", "MOD VIEW");
+        modView.placeAt (modViewSw);
+        modView.onChange = [this] (bool on) { ed.setModView (on); };
+        modView.setTooltip ("Show the input-reactive modulation matrix in the lower section");
+        addAndMakeVisible (modView);
+
+        chain.setBounds (Rc (bayX0, bayY, 8.0f * bayW + 7.0f * bayGap, bayH).toNearestInt());
+        detail.setBounds (detailPlate.toNearestInt());
+        modPanel.setBounds (detailPlate.toNearestInt());
+        analysis.setBounds (Rc (scopeL.getX(), scopeL.getY(), scopeR.getRight() - scopeL.getX(), scopeL.getHeight()).toNearestInt());
+        classifier.setBounds (Rc (layout::classifier.x - 50.0f, layout::classifier.y - 8.0f, 100.0f, 104.0f).toNearestInt());
+        addAndMakeVisible (chain);
+        addAndMakeVisible (detail);
+        addChildComponent (modPanel);
+        addAndMakeVisible (analysis);
+        addAndMakeVisible (classifier);
+    }
+
+    void paint (juce::Graphics& g) override
+    {
+        const float k = std::max (0.25f, g.getInternalContext().getPhysicalPixelScaleFactor());
+        const auto occ = chain.occupancy();
+        if (! art.isValid() || occ != artOcc) renderArt (k, occ);
+        else if (std::abs (k - artScale) > 0.01f * artScale) { wantScale = k; startTimer (160); }
+        g.setImageResamplingQuality (juce::Graphics::highResamplingQuality);
+        g.drawImageTransformed (art, juce::AffineTransform::scale (1.0f / artScale));
+        // dynamic lettering on the baked panel
+        mil::sectionTag (g, layout::detailPlate.getX(), layout::detailPlate.getY(),
+                         modPanel.isVisible() ? juce::String ("MODULATION MATRIX  -  INPUT-REACTIVE ONLY") : detail.title());
+        const auto lb = layout::latencyBox;
+        const juce::String digits = latencyText.paddedLeft ('0', 5);
+        float x = lb.getX() + 5.0f;
+        for (auto ch : digits)
+        {
+            if (ch == '.')
+            {
+                g.setColour (palette::ink);
+                g.fillEllipse (x - 0.5f, lb.getBottom() - 6.0f, 2.6f, 2.6f);
+                x += 4.0f;
+                continue;
+            }
+            const Rc cell (x, lb.getY() + 3.0f, 13.0f, lb.getHeight() - 6.0f);
+            g.setColour (juce::Colour::fromFloatRGBA (0.93f, 0.92f, 0.86f, 1));
+            g.fillRoundedRectangle (cell, 1.0f);
+            g.setFont (tagFont (11.0f));
+            g.setColour (palette::black);
+            g.drawText (juce::String::charToString (ch), cell, juce::Justification::centred, false);
+            x += 16.0f;
+        }
+    }
+
+    void tick()
+    {
+        program.update();
+        vuIn.tick();
+        vuOut.tick();
+        limitLamp.setLit (vuOut.hot());
+        for (auto& k : globals) k->sync();
+        seed->sync();
+        inputMode.sync();
+        chain.tick();
+        if (detail.isVisible()) detail.tick();
+        if (modPanel.isVisible()) modPanel.tick();
+        analysis.tick (ed.selected);
+        classifier.update (analysis.last());
+        const double ms = proc.getLatencySamples() * 1000.0 / std::max (1.0, proc.getSampleRate());
+        const auto lt = juce::String (std::min (999.9, ms), 1);
+        if (lt != latencyText) { latencyText = lt; repaint (layout::latencyBox.expanded (2.0f).toNearestInt()); }
+        const auto t = modPanel.isVisible() ? juce::String() : detail.title();
+        if (t != shownTitle) { shownTitle = t; repaint (Rc (layout::detailPlate.getX(), layout::detailPlate.getY() - 10.0f, 520.0f, 20.0f).toNearestInt()); }
+        if (chain.occupancy() != artOcc) repaint();
+    }
+
+    HarshVoxEditor& ed;
+    HarshVoxProcessor& proc;
+    ProgramWindow program;
+    PushButton prev { juce::Colour (0xff1e1e1c), 9.0f, "< PREV" }, next { juce::Colour (0xff1e1e1c), 9.0f, "NEXT >" }, store { palette::red, 10.0f, "STORE" };
+    Lamp powerLamp { juce::Colour (0xffff2e14), 5.5f }, limitLamp { palette::amber, 5.5f };
+    VuMeter vuIn, vuOut;
+    std::vector<std::unique_ptr<ParamKnob>> globals;
+    std::unique_ptr<ParamKnob> seed;
+    ToggleSwitch inputMode, modView { 1.0f };
+    ChainView chain;
+    SlotDetail detail;
+    ModMatrixPanel modPanel;
+    AnalysisDisplay analysis;
+    ClassifierPanel classifier;
+
+private:
+    void renderArt (float k, uint8_t occ)
+    {
+        art = PanelArt::render (k, occ);
+        artScale = k;
+        artOcc = occ;
+    }
+    void timerCallback() override
+    {
+        stopTimer();
+        renderArt (wantScale, chain.occupancy());
+        repaint();
+    }
+    juce::Image art;
+    float artScale = 1.0f, wantScale = 1.0f;
+    uint8_t artOcc = 0;
+    juce::String latencyText = "0.0", shownTitle;
+};
+
+//==============================================================================
 HarshVoxEditor::HarshVoxEditor (HarshVoxProcessor& p)
-    : AudioProcessorEditor (p), proc (p),
-      inMeter (&p.engine().inPeak), outMeter (&p.engine().outPeakL, &p.engine().outPeakR),
-      chain (p), detail (p), modPanel (p), analysis (p)
+    : AudioProcessorEditor (p), proc (p)
 {
     setLookAndFeel (&laf);
     juce::LookAndFeel::setDefaultLookAndFeel (&laf);
-
-    presetButton.onClick = [this] { showPresetMenu(); };
-    prevButton.onClick = [this] { stepPreset (-1); };
-    nextButton.onClick = [this] { stepPreset (1); };
-    saveButton.onClick = [this]
-    {
-        auto dir = HarshVoxProcessor::userPresetFolder();
-        dir.createDirectory();
-        chooser = std::make_unique<juce::FileChooser> ("Save Harsh Vox preset", dir.getChildFile (proc.currentPresetName + ".hvx"), "*.hvx");
-        chooser->launchAsync (juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::warnAboutOverwriting,
-                              [this] (const juce::FileChooser& fc)
-                              {
-                                  auto f = fc.getResult();
-                                  if (f != juce::File()) proc.savePresetFile (f.withFileExtension ("hvx"));
-                              });
-    };
-    modButton.setClickingTogglesState (true);
-    modButton.setTooltip ("Show the input-reactive modulation matrix");
-    modButton.onClick = [this] { detail.setVisible (! modButton.getToggleState()); modPanel.setVisible (modButton.getToggleState()); };
-    inputButton.setTooltip ("Input: STEREO keeps left/right separate through the chain; MONO sums the input to mono first. "
-                            "Analysis always uses the mono sum. Not changed by presets.");
-    inputButton.onClick = [this]
-    {
-        const bool stereo = proc.paramReal (InputMode) >= 0.5f;
-        proc.setParamReal (InputMode, stereo ? (float) InputMono : (float) InputStereo);
-    };
-    for (auto* b : { &presetButton, &prevButton, &nextButton, &saveButton, &modButton, &inputButton }) addAndMakeVisible (b);
-
-    const std::pair<int, const char*> g[] = { { InGain, "Input" }, { EnvAtk, "Env Atk" }, { EnvRel, "Env Rel" },
-                                              { Seed, "Seed" }, { Mix, "Mix" }, { OutGain, "Output" } };
-    for (auto& [idx, name] : g)
-    {
-        globals.push_back (std::make_unique<ParamKnob> (proc, idx, -1, -1, true));
-        globals.back()->setLabel (name);
-        addAndMakeVisible (*globals.back());
-    }
-    addAndMakeVisible (inMeter);
-    addAndMakeVisible (outMeter);
-    chain.onSelect = [this] (int s) { selectSlot (s); };
-    detail.onSelectSlot = [this] (int s) { selectSlot (s); };
-    addAndMakeVisible (chain);
-    addAndMakeVisible (detail);
-    addChildComponent (modPanel);
-    addAndMakeVisible (analysis);
+    panel = std::make_unique<Panel> (*this, p);
+    panel->chain.onSelect = [this] (int s) { selectSlot (s); };
+    panel->detail.onSelectSlot = [this] (int s) { selectSlot (s); };
+    addAndMakeVisible (*panel);
 
     for (int s = 0; s < kMainSlots; ++s)
         if (proc.slotType (s) > 0) { selected = s; break; }
     selectSlot (selected);
 
     setResizable (true, true);
-    setResizeLimits (900, 560, 2400, 1600);
-    setSize (1220, 760);
+    setResizeLimits ((int) std::lround (layout::kW * layout::kMinScale), (int) std::lround (layout::kH * layout::kMinScale),
+                     (int) std::lround (layout::kW * layout::kMaxScale), (int) std::lround (layout::kH * layout::kMaxScale));
+    if (auto* c = getConstrainer()) c->setFixedAspectRatio (layout::kW / layout::kH);
+    setSize ((int) layout::kW, (int) layout::kH);
     startTimerHz (30);
 }
 
@@ -75,27 +247,40 @@ HarshVoxEditor::~HarshVoxEditor()
     setLookAndFeel (nullptr);
 }
 
+void HarshVoxEditor::paint (juce::Graphics& g)
+{
+    g.fillAll (juce::Colour (0xff111110));
+}
+
+void HarshVoxEditor::resized()
+{
+    const float s = std::min ((float) getWidth() / layout::kW, (float) getHeight() / layout::kH);
+    panel->setBounds (0, 0, (int) layout::kW, (int) layout::kH);
+    panel->setTransform (juce::AffineTransform::scale (s).translated (((float) getWidth() - layout::kW * s) * 0.5f,
+                                                                      ((float) getHeight() - layout::kH * s) * 0.5f));
+}
+
+void HarshVoxEditor::setModView (bool on)
+{
+    panel->modView.setUp (on);
+    panel->detail.setVisible (! on);
+    panel->classifier.setVisible (! on);
+    panel->modPanel.setVisible (on);
+    panel->repaint();
+}
+
 void HarshVoxEditor::selectSlot (int s)
 {
     selected = s;
-    chain.setSelected (s);
-    detail.setSlot (s);
-    if (modButton.getToggleState()) { modButton.setToggleState (false, juce::dontSendNotification); modPanel.setVisible (false); detail.setVisible (true); }
+    panel->chain.setSelected (s);
+    panel->detail.setSlot (s);
+    if (panel->modPanel.isVisible()) setModView (false);
+    panel->repaint (Rc (layout::detailPlate.getX(), layout::detailPlate.getY() - 10.0f, 520.0f, 20.0f).toNearestInt());
 }
 
 void HarshVoxEditor::timerCallback()
 {
-    for (auto& k : globals) k->sync();
-    inMeter.tick();
-    outMeter.tick();
-    chain.tick();
-    if (detail.isVisible()) detail.tick();
-    if (modPanel.isVisible()) modPanel.tick();
-    analysis.tick (selected);
-    presetButton.setButtonText (proc.currentPresetName);
-    inputButton.setButtonText (proc.paramReal (InputMode) >= 0.5f ? "STEREO" : "MONO");
-    const auto lt = juce::String (proc.getLatencySamples() * 1000.0 / std::max (1.0, proc.getSampleRate()), 1) + " ms";
-    if (lt != latencyText) { latencyText = lt; repaint (getLocalBounds().withTrimmedTop (48).removeFromTop (78)); }
+    panel->tick();
 }
 
 void HarshVoxEditor::stepPreset (int delta)
@@ -106,7 +291,20 @@ void HarshVoxEditor::stepPreset (int delta)
     proc.setCurrentProgram ((cur + delta + n) % n);
 }
 
-void HarshVoxEditor::showPresetMenu()
+void HarshVoxEditor::savePreset()
+{
+    auto dir = HarshVoxProcessor::userPresetFolder();
+    dir.createDirectory();
+    chooser = std::make_unique<juce::FileChooser> ("Save Harsh Vox preset", dir.getChildFile (proc.currentPresetName + ".hvx"), "*.hvx");
+    chooser->launchAsync (juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::warnAboutOverwriting,
+                          [this] (const juce::FileChooser& fc)
+                          {
+                              auto f = fc.getResult();
+                              if (f != juce::File()) proc.savePresetFile (f.withFileExtension ("hvx"));
+                          });
+}
+
+void HarshVoxEditor::showPresetMenu (juce::Component* target)
 {
     juce::PopupMenu m, user;
     m.addSectionHeader ("FACTORY");
@@ -117,16 +315,18 @@ void HarshVoxEditor::showPresetMenu()
     m.addSeparator();
     m.addSubMenu ("User", user, ! files.isEmpty());
     m.addItem (900, "Load preset file...");
+    m.addItem (903, "Save preset...");
     m.addItem (901, "Reveal user preset folder");
     m.addSeparator();
     m.addItem (902, "Export preset as code (copy to clipboard)");
-    m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&presetButton).withMinimumWidth (260), [this, files] (int r)
+    m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (target).withMinimumWidth (260), [this, files] (int r)
     {
         if (r <= 0) return;
         if (r < 900) proc.setCurrentProgram (r - 1);
         else if (r >= 1000) proc.loadPresetFile (files[r - 1000]);
         else if (r == 901) { HarshVoxProcessor::userPresetFolder().createDirectory(); HarshVoxProcessor::userPresetFolder().revealToUser(); }
         else if (r == 902) exportPreset();
+        else if (r == 903) savePreset();
         else if (r == 900)
         {
             chooser = std::make_unique<juce::FileChooser> ("Load Harsh Vox preset", HarshVoxProcessor::userPresetFolder(), "*.hvx");
@@ -155,64 +355,5 @@ void HarshVoxEditor::exportPreset()
         juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::InfoIcon, "Preset exported",
             "Copied to the clipboard and saved to:\n" + f.getFullPathName() + "\n\nPaste it into the preset list (src/plugin/Presets.cpp).", "OK", this);
     }), true);
-}
-
-void HarshVoxEditor::paint (juce::Graphics& g)
-{
-    using namespace palette;
-    g.fillAll (bg0);
-    auto h = headerArea().toFloat();
-    g.setColour (bg1);
-    g.fillRect (h);
-    g.setColour (line);
-    g.drawHorizontalLine ((int) h.getBottom() - 1, 0.0f, (float) getWidth());
-    drawHarshVoxWordmark (g, 16.0f, h.getCentreY() - 10.0f, 20.0f);
-    // company mark: full brightness, ~70% of the product wordmark's cap height (house layout)
-    constexpr float logoCap = 14.0f;
-    const float lw = staticRuinLogoWidth (logoCap);
-    drawStaticRuinLogo (g, h.getRight() - lw - 18.0f, h.getCentreY() - logoCap * 0.5f, logoCap, false);
-
-    // global strip background + labels
-    auto gs = getLocalBounds().withTrimmedTop (48).removeFromTop (78).reduced (8, 6).toFloat();
-    g.setColour (panel);
-    g.fillRoundedRectangle (gs, 5.0f);
-    BlockFont::draw (g, "IN", gs.getX() + 10.0f, gs.getY() + 8.0f, 7.0f, textDim);
-    BlockFont::draw (g, "OUT", gs.getRight() - 30.0f, gs.getY() + 8.0f, 7.0f, textDim);
-    g.setFont (monoFont (11.0f));
-    g.setColour (textDim);
-    const juce::Rectangle<float> info (gs.getRight() - 300.0f, gs.getY(), 220.0f, gs.getHeight());
-    g.drawText ("LATENCY " + latencyText, info.withTrimmedBottom (gs.getHeight() * 0.5f - 2.0f).toNearestInt(), juce::Justification::bottomRight);
-    g.drawText ("v" HV_VERSION_STRING, info.withTrimmedTop (gs.getHeight() * 0.5f + 2.0f).toNearestInt(), juce::Justification::topRight);
-}
-
-void HarshVoxEditor::resized()
-{
-    auto r = getLocalBounds();
-    auto h = r.removeFromTop (48).reduced (0, 10);
-    const int cx = getWidth() / 2;
-    presetButton.setBounds (cx - 140, h.getY(), 280, h.getHeight());
-    prevButton.setBounds (cx - 140 - 32, h.getY(), 28, h.getHeight());
-    nextButton.setBounds (cx + 144, h.getY(), 28, h.getHeight());
-    saveButton.setBounds (cx + 180, h.getY(), 56, h.getHeight());
-
-    auto gs = r.removeFromTop (78).reduced (8, 6);
-    inMeter.setBounds (gs.getX() + 32, gs.getY() + 8, 14, gs.getHeight() - 16);
-    outMeter.setBounds (gs.getRight() - 46, gs.getY() + 8, 14, gs.getHeight() - 16);
-    auto knobs = gs.withTrimmedLeft (60).withTrimmedRight (60);
-    for (auto& k : globals) k->setBounds (knobs.removeFromLeft (74));
-    modButton.setBounds (knobs.removeFromLeft (70).withSizeKeepingCentre (56, 26).translated (10, 0));
-    inputButton.setBounds (knobs.removeFromLeft (84).withSizeKeepingCentre (72, 26).translated (10, 0));
-
-    r.reduce (8, 0);
-    r.removeFromBottom (8);
-    const int avail = r.getHeight();
-    const int chainH = std::max (180, (int) (avail * 0.38f));
-    const int analysisH = std::max (110, (int) (avail * 0.25f));
-    chain.setBounds (r.removeFromTop (chainH));
-    r.removeFromTop (8);
-    analysis.setBounds (r.removeFromBottom (analysisH));
-    r.removeFromBottom (8);
-    detail.setBounds (r);
-    modPanel.setBounds (r);
 }
 } // namespace hv

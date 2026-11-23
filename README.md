@@ -138,7 +138,28 @@ User presets are saved as `.hvx` files under `~/.config/Static Ruin/Harsh Vox/Pr
   speech (free licence, see `test_vocals/CMU_ARCTIC_COPYING.txt`). Add real screamed takes for meaningful
   listening tests.
 
-## Fonts
+## Interface
+
+The panel is styled as military field hardware: khaki enamel, black bakelite knobs, bat toggles, jewel
+lamps, cream VU meters, plug-in module units in recessed bays, and green-phosphor CRT scopes.
+
+- **Fixed layout, scaled as one piece.** The panel is laid out at 1220 x 760 and scales proportionally
+  (fixed aspect ratio) from **900 x 561** up to 2440 x 1520.
+- **Drawn in code, plus photo textures.** All hardware is vector-drawn (`src/gui/MilDraw.cpp`). The panel
+  background (`src/gui/PanelArt.cpp`) adds a paint finish using CC0 photo masks: relief, chips worn
+  through to bare metal along edges and round the most-used knobs, scratches, grime streaks, fingerprints,
+  and rust round the screws. The finished background is cached at the screen's real pixel density. It is
+  rebuilt only when the window scale changes or a bay is filled or emptied: about 75 ms at 1x and
+  0.3 s at 2x, multi-threaded.
+- **Using it.**
+  - Click a vacant bay or turn the **MODULE** selector to fit a unit.
+  - Drag a unit's name plate to reorder; click the name plate to change the module.
+  - The **MOD VIEW** switch shows the modulation matrix in the lower section.
+  - Click the **PROGRAM** window for presets, save, load and export.
+
+## Fonts and textures
 
 Headings and logos use a procedural block font (`src/gui/BlockFont.cpp`) in the Static Ruin house style.
-UI text uses Space Grotesk and DM Mono, both SIL OFL 1.1 (`resources/fonts/`).
+Panel lettering uses IBM Plex Sans Condensed and IBM Plex Mono. Menus and dialogs use Space Grotesk and
+DM Mono. All are SIL OFL 1.1 (`resources/fonts/`). Panel textures are CC0 from ambientCG
+(`resources/textures/README.md`).

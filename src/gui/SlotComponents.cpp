@@ -3,11 +3,13 @@
 namespace hv::ui
 {
 using namespace params;
+using Rc = juce::Rectangle<float>;
+using Pt = juce::Point<float>;
 
 void showModuleMenu (HarshVoxProcessor& p, int slot, juce::Component* target, std::function<void()> after)
 {
     juce::PopupMenu m;
-    m.addSectionHeader (slot < kMainSlots ? "SLOT " + juce::String (slot + 1) : "SEND " + juce::String (slotLabel (slot)));
+    m.addSectionHeader (slot < kMainSlots ? "BAY " + juce::String (slot + 1).paddedLeft ('0', 2) : "SEND " + juce::String (slotLabel (slot)));
     const int cur = p.slotType (slot);
     for (int t = 1; t < kNumModuleTypes; ++t)
     {
@@ -25,17 +27,25 @@ void showModuleMenu (HarshVoxProcessor& p, int slot, juce::Component* target, st
                      });
 }
 
-//==============================================================================
-SlotCard::SlotCard (HarshVoxProcessor& p, int s) : slot (s), proc (p)
+juce::String moduleAbbrev (int t)
 {
-    power.setClickingTogglesState (true);
-    power.setTooltip ("Bypass");
-    power.onClick = [this] { proc.setParamReal (slotIndex (slot, SOn), power.getToggleState() ? 1.0f : 0.0f); };
-    addAndMakeVisible (power);
+    static const char* const a[] = { "---", "DRV", "GRL", "FRY", "FRM", "SPL", "SYL", "CUP", "CNT", "RTL", "KZO", "CAR", "SAL", "MOB" };
+    return a[std::clamp (t, 0, (int) std::size (a) - 1)];
+}
+
+//==============================================================================
+BayUnit::BayUnit (HarshVoxProcessor& p, int s) : slot (s), proc (p), power (p, slotIndex (s, SOn), 0.55f)
+{
+    power.setTexts ({}, {}, {});
+    power.placeAt ({ face().getX() + 13.0f, face().getBottom() - 17.0f });
+    addChildComponent (power);
     rebuild();
 }
 
-void SlotCard::rebuild()
+Rc BayUnit::face() const { return layout::moduleFace ({ 0, 0, layout::bayW, layout::bayH }); }
+Rc BayUnit::namePlate() const { const auto f = face(); return { f.getX() + 18.0f, f.getY() + 3.0f, f.getWidth() - 36.0f, 17.0f }; }
+
+void BayUnit::rebuild()
 {
     type = proc.slotType (slot);
     for (auto& k : keys) removeChildComponent (k.get());
@@ -44,134 +54,114 @@ void SlotCard::rebuild()
     mixKnob.reset();
     if (type > 0)
     {
+        KnobLook kl;
+        kl.r = 11.0f; kl.labelSize = 7.2f; kl.tagSize = 6.9f;
         const auto& specs = moduleInfo (type).params;
         for (int k = 0; k < (int) specs.size() && keys.size() < 4; ++k)
             if (specs[(size_t) k].key)
             {
-                keys.push_back (std::make_unique<ParamKnob> (proc, slotIndex (slot, SP0 + k), slot, k, true));
+                const int i = (int) keys.size();
+                keys.push_back (std::make_unique<ParamKnob> (proc, slotIndex (slot, SP0 + k), slot, k, kl));
+                keys.back()->placeAt ({ 37.0f + (float) (i % 2) * 62.0f, 48.0f + (float) (i / 2) * 57.0f });
                 addAndMakeVisible (*keys.back());
             }
-        mixKnob = std::make_unique<ParamKnob> (proc, slotIndex (slot, SMix), slot, kParamsPerSlot, true);
+        KnobLook ml;
+        ml.r = 9.0f; ml.label = false; ml.valueTag = false;
+        mixKnob = std::make_unique<ParamKnob> (proc, slotIndex (slot, SMix), slot, kParamsPerSlot, ml);
         mixKnob->setLabel ("Mix");
+        mixKnob->placeAt ({ face().getRight() - 21.0f, face().getBottom() - 18.0f });
         addAndMakeVisible (*mixKnob);
     }
     power.setVisible (type > 0);
-    resized();
     repaint();
 }
 
-void SlotCard::tick()
+void BayUnit::tick()
 {
     if (proc.slotType (slot) != type) rebuild();
     for (auto& k : keys) k->sync();
     if (mixKnob) mixKnob->sync();
-    power.setToggleState (proc.paramReal (slotIndex (slot, SOn)) >= 0.5f, juce::dontSendNotification);
-    const float l = proc.engine().slotShared (slot).level.load (std::memory_order_relaxed);
-    const float nl = std::max (l, level * 0.85f);
-    if (std::abs (nl - level) > 0.002f) { level = nl; repaint (getLocalBounds().removeFromBottom (5)); }
+    power.sync();
+    const bool o = proc.paramReal (slotIndex (slot, SOn)) >= 0.5f;
+    if (o != on) { on = o; repaint(); }
 }
 
-void SlotCard::resized()
+void BayUnit::paint (juce::Graphics& g)
 {
-    auto r = getLocalBounds().reduced (6, 0);
-    auto h = r.removeFromTop (26);
-    power.setBounds (h.removeFromRight (18).withSizeKeepingCentre (16, 16));
-    r.removeFromBottom (8);
-    if (type <= 0) return;
-    auto mixRow = r.removeFromBottom (std::min (78, r.getHeight() / 3));
-    if (mixKnob) mixKnob->setBounds (mixRow.withSizeKeepingCentre (std::min (mixRow.getWidth(), 70), mixRow.getHeight()));
-    const int n = (int) keys.size();
-    if (n == 0) return;
-    const int cols = 2, rowsN = (n + 1) / 2;
-    const int cw = r.getWidth() / cols, rh = r.getHeight() / rowsN;
-    for (int i = 0; i < n; ++i)
-        keys[(size_t) i]->setBounds (r.getX() + (i % cols) * cw, r.getY() + (i / cols) * rh, cw, rh);
-}
-
-void SlotCard::paint (juce::Graphics& g)
-{
-    using namespace palette;
-    auto r = getLocalBounds().toFloat();
-    const bool on = proc.paramReal (slotIndex (slot, SOn)) >= 0.5f;
-    g.setColour (panel);
-    g.fillRoundedRectangle (r, 5.0f);
-    auto h = r.removeFromTop (26.0f);
-    g.setColour (bg1);
-    g.fillRoundedRectangle (h, 5.0f);
-    g.fillRect (h.withTrimmedTop (10.0f));
-    // number + module name in block lettering
-    const float cap = 8.0f;
-    BlockFont::draw (g, juce::String (slot + 1).paddedLeft ('0', 2), h.getX() + 8.0f, h.getCentreY() - cap * 0.5f, cap,
-                     type > 0 && on ? accent : textFaint);
-    const juce::String name = type > 0 ? moduleInfo (type).shortName : "EMPTY";
-    BlockFont::draw (g, name, h.getX() + 30.0f, h.getCentreY() - cap * 0.5f, cap, type > 0 ? (on ? text : textDim) : textFaint);
+    using namespace mil;
+    const auto f = face();
     if (type <= 0)
     {
-        auto body = r.reduced (10.0f);
-        g.setColour (line);
-        const float dash[] = { 4.0f, 4.0f };
-        juce::Path rp; rp.addRectangle (body);
-        juce::Path dashed;
-        juce::PathStrokeType (1.0f).createDashedStroke (dashed, rp, dash, 2);
-        g.fillPath (dashed);
-        BlockFont::drawCentred (g, "+", body.withTrimmedBottom (24.0f), 14.0f, textDim);
-        BlockFont::drawCentred (g, "ADD", body.withTrimmedTop (body.getHeight() * 0.5f), 7.0f, textFaint);
+        const float cx = (float) getWidth() * 0.5f, cy = (float) getHeight() * 0.5f;
+        stencil (g, "BAY " + juce::String (slot + 1).paddedLeft ('0', 2), cx, cy - 12.0f, 10.0f, juce::Justification::centred, palette::ink, 1.0f, 0.12f);
+        stencil (g, "VACANT", cx, cy + 4.0f, 7.8f, juce::Justification::centred, palette::ink, 0.8f, 0.18f);
+        g.setColour (palette::ink.withAlpha (0.5f));
+        g.drawLine (cx - 26.0f, cy + 16.0f, cx + 26.0f, cy + 16.0f, 0.8f);
+        stencil (g, "INSERT MODULE", cx, cy + 26.0f, 7.0f, juce::Justification::centred, palette::ink, 0.75f, 0.08f);
+        return;
     }
-    // level strip
-    auto lv = getLocalBounds().toFloat().removeFromBottom (4.0f).reduced (6.0f, 0.0f);
-    g.setColour (bg0);
-    g.fillRect (lv);
-    const float db = juce::Decibels::gainToDecibels (level, -60.0f);
-    g.setColour (db > -3.0f ? brand : text.withAlpha (0.6f));
-    g.fillRect (lv.withWidth (lv.getWidth() * juce::jlimit (0.0f, 1.0f, (db + 60.0f) / 60.0f)));
+    thumbscrew (g, { f.getX() + 9.0f, f.getY() + 11.0f });
+    thumbscrew (g, { f.getRight() - 9.0f, f.getY() + 11.0f });
+    const auto np = namePlate();
+    softShadow (g, np, 2.0f, 3, 0.12f, 1.2f, 1.8f);
+    g.setGradientFill (juce::ColourGradient (juce::Colour (0xff292926), 0, np.getY(), juce::Colour (0xff0d0d0d), 0, np.getBottom(), false));
+    g.fillRoundedRectangle (np, 2.0f);
+    g.setColour (juce::Colours::white.withAlpha (0.18f));
+    g.drawLine (np.getX() + 2, np.getY() + 0.5f, np.getRight() - 2, np.getY() + 0.5f, 0.7f);
+    g.setFont (tagFont (8.6f));
+    g.setColour (selected ? palette::red.brighter (0.3f) : palette::tagText);
+    g.drawText (juce::String (slot + 1).paddedLeft ('0', 2), Rc (np.getX() + 4.0f, np.getY(), 16.0f, np.getHeight()), juce::Justification::centredLeft, false);
+    g.setFont (stencilFont (8.8f).withExtraKerningFactor (0.06f));
+    g.setColour (palette::ink);
+    g.drawText (moduleInfo (type).shortName, Rc (np.getX() + 21.0f, np.getY(), np.getWidth() - 34.0f, np.getHeight()), juce::Justification::centredLeft, false);
+    jewel (g, { np.getRight() - 7.0f, np.getCentreY() }, 3.0f, juce::Colour (0xffff2e14), on);
+    stencil (g, "PWR", f.getX() + 23.0f, f.getBottom() - 17.0f, 7.0f, juce::Justification::left);
+    stencil (g, "MIX", f.getRight() - 35.0f, f.getBottom() - 18.0f, 7.0f, juce::Justification::right);
+    pullHandle (g, f.getCentreX() - 13.0f, f.getCentreX() + 9.0f, f.getBottom() - 9.0f);
 }
 
-void SlotCard::paintOverChildren (juce::Graphics& g)
+void BayUnit::paintOverChildren (juce::Graphics& g)
 {
+    const auto f = face();
+    if (type > 0 && ! on)
+    {
+        g.setColour (juce::Colour (0x40000000));
+        g.fillRoundedRectangle (f.withTrimmedTop (22.0f), 3.0f);
+    }
     if (selected || dragOver)
     {
-        g.setColour (dragOver ? palette::brand : palette::accent);
-        g.drawRoundedRectangle (getLocalBounds().toFloat().reduced (0.5f), 5.0f, dragOver ? 2.0f : 1.5f);
-    }
-    if (proc.paramReal (slotIndex (slot, SOn)) < 0.5f && type > 0)
-    {
-        g.setColour (palette::bg0.withAlpha (0.45f));
-        g.fillRoundedRectangle (getLocalBounds().toFloat().withTrimmedTop (26.0f), 5.0f);
+        g.setColour (dragOver ? palette::brand : palette::red);
+        g.drawRoundedRectangle ((type > 0 ? f : getLocalBounds().toFloat().reduced (3.0f)).expanded (type > 0 ? 2.0f : 0.0f), 4.0f, 1.6f);
     }
 }
 
-void SlotCard::mouseDown (const juce::MouseEvent& e)
+void BayUnit::mouseDown (const juce::MouseEvent&)
 {
     dragStarted = false;
     if (type <= 0) { showModuleMenu (proc, slot, this); return; }
     if (onSelect) onSelect (slot);
-    juce::ignoreUnused (e);
 }
 
-void SlotCard::mouseDrag (const juce::MouseEvent& e)
+void BayUnit::mouseDrag (const juce::MouseEvent& e)
 {
-    if (type <= 0 || dragStarted || e.getDistanceFromDragStart() < 6 || ! headerArea().contains (e.getMouseDownPosition())) return;
+    if (type <= 0 || dragStarted || e.getDistanceFromDragStart() < 6 || ! namePlate().expanded (14.0f, 4.0f).contains (e.getMouseDownPosition().toFloat())) return;
     if (auto* c = juce::DragAndDropContainer::findParentDragContainerFor (this))
     {
         dragStarted = true;
-        auto img = createComponentSnapshot (getLocalBounds()).rescaled (getWidth() / 2, getHeight() / 2);
+        auto img = createComponentSnapshot (getLocalBounds(), true, 1.0f).rescaled (getWidth() / 2, getHeight() / 2);
         c->startDragging ("slot:" + juce::String (slot), this, juce::ScaledImage (img));
     }
 }
 
-void SlotCard::mouseUp (const juce::MouseEvent& e)
+void BayUnit::mouseUp (const juce::MouseEvent& e)
 {
-    if (! dragStarted && type > 0 && headerArea().contains (e.getPosition()) && e.getPosition().x > 26
-        && e.getPosition().x < getWidth() - 26 && e.mouseWasClicked())
+    if (! dragStarted && type > 0 && e.mouseWasClicked() && namePlate().contains (e.getPosition().toFloat()))
         showModuleMenu (proc, slot, this);
 }
 
-bool SlotCard::isInterestedInDragSource (const SourceDetails& d)
-{
-    return d.description.toString().startsWith ("slot:");
-}
+bool BayUnit::isInterestedInDragSource (const SourceDetails& d) { return d.description.toString().startsWith ("slot:"); }
 
-void SlotCard::itemDropped (const SourceDetails& d)
+void BayUnit::itemDropped (const SourceDetails& d)
 {
     dragOver = false;
     const int from = d.description.toString().fromFirstOccurrenceOf ("slot:", false, false).getIntValue();
@@ -181,51 +171,37 @@ void SlotCard::itemDropped (const SourceDetails& d)
 }
 
 //==============================================================================
-ChainView::ChainView (HarshVoxProcessor& p)
+ChainView::ChainView (HarshVoxProcessor& p) : proc (p)
 {
     for (int s = 0; s < kMainSlots; ++s)
     {
-        cards.push_back (std::make_unique<SlotCard> (p, s));
-        cards.back()->onSelect = [this] (int sl) { if (onSelect) onSelect (sl); };
-        addAndMakeVisible (*cards.back());
+        bays.push_back (std::make_unique<BayUnit> (p, s));
+        bays.back()->onSelect = [this] (int sl) { if (onSelect) onSelect (sl); };
+        const auto b = layout::bay (s).translated (-layout::bayX0, -layout::bayY);
+        bays.back()->setBounds (b.toNearestInt());
+        addAndMakeVisible (*bays.back());
     }
 }
 
-void ChainView::tick() { for (auto& c : cards) c->tick(); }
+void ChainView::tick() { for (auto& b : bays) b->tick(); }
 
 void ChainView::setSelected (int s)
 {
-    for (auto& c : cards) { c->selected = c->slot == s; c->repaint(); }
+    for (auto& b : bays) { b->selected = b->slot == s; b->repaint(); }
 }
 
-void ChainView::resized()
+uint8_t ChainView::occupancy() const
 {
-    auto r = getLocalBounds();
-    const int gap = 6, n = (int) cards.size();
-    const int w = (r.getWidth() - gap * (n - 1)) / n;
-    for (int i = 0; i < n; ++i) cards[(size_t) i]->setBounds (r.getX() + i * (w + gap), r.getY(), w, r.getHeight());
-}
-
-void ChainView::paint (juce::Graphics& g)
-{
-    // signal-flow ticks between cards
-    g.setColour (palette::textFaint);
-    const int n = (int) cards.size();
-    for (int i = 0; i + 1 < n; ++i)
-    {
-        const auto& c = cards[(size_t) i];
-        g.fillRect ((float) c->getRight() + 1.0f, (float) c->getY() + 12.0f, 4.0f, 2.0f);
-    }
+    uint8_t m = 0;
+    for (int s = 0; s < kMainSlots; ++s) if (proc.slotType (s) > 0) m |= (uint8_t) (1u << s);
+    return m;
 }
 
 //==============================================================================
 SlotDetail::SlotDetail (HarshVoxProcessor& p) : proc (p)
 {
-    power.setClickingTogglesState (true);
-    power.onClick = [this] { proc.setParamReal (slotIndex (slot, SOn), power.getToggleState() ? 1.0f : 0.0f); };
-    addAndMakeVisible (power);
-    moduleButton.onClick = [this] { showModuleMenu (proc, slot, &moduleButton); };
-    addAndMakeVisible (moduleButton);
+    setInterceptsMouseClicks (false, true);
+    addAndMakeVisible (dial);
     captureButton.setTooltip ("Store the current vocal-tract shape as the Freeze target (saved with the session)");
     captureButton.onClick = [this]
     {
@@ -234,6 +210,7 @@ SlotDetail::SlotDetail (HarshVoxProcessor& p) : proc (p)
         proc.setParamNorm (slotIndex (slot, SP0 + k), moduleInfo (ModuleType::FormantFreeze).params[(size_t) k].toNorm (0.0f));
     };
     addChildComponent (captureButton);
+    backButton.setButtonText ("< SPLITTER");
     backButton.onClick = [this]
     {
         for (int s = 0; s < kMainSlots; ++s)
@@ -247,28 +224,34 @@ SlotDetail::SlotDetail (HarshVoxProcessor& p) : proc (p)
         b.onClick = [this, i]
         {
             const int sub = kMainSlots + i;
-            if (proc.slotType (sub) == 0) { showModuleMenu (proc, sub, &sendButtons[(size_t) i], [this, sub] { if (onSelectSlot) onSelectSlot (sub); }); return; }
+            auto* btn = &sendButtons[(size_t) i];
+            if (proc.slotType (sub) == 0) { showModuleMenu (proc, sub, btn, [this, sub] { if (onSelectSlot) onSelectSlot (sub); }); return; }
             juce::PopupMenu m;
             m.addItem (1, "Edit");
             m.addItem (2, "Change module...");
             m.addItem (3, "Clear");
-            m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&sendButtons[(size_t) i]), [this, sub, i] (int r)
+            m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (btn), [this, sub, btn] (int r)
             {
                 if (r == 1 && onSelectSlot) onSelectSlot (sub);
-                if (r == 2) showModuleMenu (proc, sub, &sendButtons[(size_t) i]);
+                if (r == 2) showModuleMenu (proc, sub, btn);
                 if (r == 3) proc.clearSlot (sub);
             });
         };
         addChildComponent (b);
     }
-    rebuild();
 }
 
 void SlotDetail::setSlot (int s)
 {
-    if (s == slot) return;
+    if (s == slot && type >= 0) return;
     slot = s;
     rebuild();
+}
+
+juce::String SlotDetail::title() const
+{
+    const juce::String where = slot < kMainSlots ? "BAY " + juce::String (slot + 1).paddedLeft ('0', 2) : "SEND " + juce::String (slotLabel (slot));
+    return where + "  -  " + (type > 0 ? juce::String (moduleInfo (type).name).toUpperCase() : juce::String ("VACANT"));
 }
 
 bool SlotDetail::showSends() const
@@ -281,49 +264,92 @@ bool SlotDetail::showSends() const
 
 void SlotDetail::rebuild()
 {
+    using namespace layout;
     type = proc.slotType (slot);
     for (auto& k : knobs) removeChildComponent (k.get());
-    knobs.clear();
+    for (auto& k : switches) removeChildComponent (k.get());
+    knobs.clear(); switches.clear();
     if (mixKnob) removeChildComponent (mixKnob.get());
     if (outKnob) removeChildComponent (outKnob.get());
-    mixKnob.reset(); outKnob.reset();
+    if (power) removeChildComponent (power.get());
+    mixKnob.reset(); outKnob.reset(); power.reset();
+    sendsShown = showSends();
+
+    dial.setBounds (Rc (2.0f * (moduleDialR + 14.0f), 2.0f * (moduleDialR + 14.0f) + 14.0f)
+                        .withCentre (L (moduleDial).translated (0.0f, -7.0f)).getSmallestIntegerContainer());
     if (type > 0)
     {
-        const auto& specs = moduleInfo (type).params;
-        for (int k = 0; k < (int) specs.size(); ++k)
-        {
-            knobs.push_back (std::make_unique<ParamKnob> (proc, slotIndex (slot, SP0 + k), slot, k));
-            addAndMakeVisible (*knobs.back());
-        }
-        mixKnob = std::make_unique<ParamKnob> (proc, slotIndex (slot, SMix), slot, kParamsPerSlot, true);
+        KnobLook big;
+        big.r = detailBigR; big.numbers = true; big.labelSize = 8.6f; big.tagSize = 7.4f;
+        mixKnob = std::make_unique<ParamKnob> (proc, slotIndex (slot, SMix), slot, kParamsPerSlot, big);
         mixKnob->setLabel ("Mix");
-        outKnob = std::make_unique<ParamKnob> (proc, slotIndex (slot, SOut), -1, -1, true);
+        mixKnob->placeAt (L (detailMix));
+        outKnob = std::make_unique<ParamKnob> (proc, slotIndex (slot, SOut), -1, -1, big);
         outKnob->setLabel ("Output");
+        outKnob->placeAt (L (detailOut));
         addAndMakeVisible (*mixKnob);
         addAndMakeVisible (*outKnob);
+        power = std::make_unique<ToggleSwitch> (proc, slotIndex (slot, SOn), 0.6f);
+        power->setTexts ({}, {}, {});
+        power->placeAt (L (detailPower));
+        addAndMakeVisible (*power);
+
+        const auto& specs = moduleInfo (type).params;
+        const float dx = sendsShown ? 78.0f : gridDX;
+        KnobLook kl;
+        kl.r = detailKnobR; kl.labelSize = 7.8f; kl.tagSize = 7.2f;
+        for (int k = 0; k < (int) specs.size(); ++k)
+        {
+            const Pt c = L ({ gridX0 + (float) (k % 6) * dx, k < 6 ? gridRow0 : gridRow1 });
+            const auto& sp = specs[(size_t) k];
+            if (sp.map == Map::Toggle || (sp.map == Map::Choice && sp.numChoices() == 2))
+            {
+                auto sw = std::make_unique<ToggleSwitch> (proc, slotIndex (slot, SP0 + k), 0.72f);
+                juce::String up = "ON", down = "OFF";
+                if (sp.map == Map::Choice) { up = juce::String (sp.choices[1]).toUpperCase(); down = juce::String (sp.choices[0]).toUpperCase(); }
+                sw->setTexts (up, down, juce::String (sp.name).toUpperCase());
+                sw->nameSize = 7.8f;
+                sw->placeAt (c.translated (0.0f, 2.0f));
+                addAndMakeVisible (*sw);
+                switches.push_back (std::move (sw));
+            }
+            else
+            {
+                knobs.push_back (std::make_unique<ParamKnob> (proc, slotIndex (slot, SP0 + k), slot, k, kl));
+                knobs.back()->placeAt (c);
+                addAndMakeVisible (*knobs.back());
+            }
+        }
     }
-    moduleButton.setButtonText (type > 0 ? juce::String (moduleInfo (type).name) : "Choose module...");
+    captureButton.placeAt (L (captureBtn));
     captureButton.setVisible (type == (int) ModuleType::FormantFreeze);
+    backButton.setBounds (Rc (90.0f, 18.0f).withCentre (L ({ dividerX + 60.0f, detailPlate.getY() + 2.0f })).toNearestInt());
     backButton.setVisible (slot >= kMainSlots);
-    const bool sends = showSends();
-    for (int i = 0; i < 6; ++i) sendButtons[(size_t) i].setVisible (sends);
-    power.setVisible (type > 0);
-    resized();
+    for (int i = 0; i < 6; ++i)
+    {
+        const auto a = sendsArea.translated (-getX(), -getY());
+        const float y = a.getY() + 18.0f + (float) (i / 2) * 38.0f;
+        sendButtons[(size_t) i].setBounds (Rc (a.getX() + 66.0f + (float) (i % 2) * 52.0f, y - 9.0f, 48.0f, 18.0f).toNearestInt());
+        sendButtons[(size_t) i].setVisible (sendsShown);
+    }
+    for (auto& t : sendTypes) t = -1;
     repaint();
+    if (auto* p = getParentComponent()) p->repaint();
 }
 
 void SlotDetail::tick()
 {
-    if (proc.slotType (slot) != type) rebuild();
+    if (proc.slotType (slot) != type || showSends() != sendsShown) rebuild();
     for (auto& k : knobs) k->sync();
+    for (auto& k : switches) k->sync();
     if (mixKnob) mixKnob->sync();
     if (outKnob) outKnob->sync();
-    power.setToggleState (proc.paramReal (slotIndex (slot, SOn)) >= 0.5f, juce::dontSendNotification);
-    if (showSends())
+    if (power) power->sync();
+    if (sendsShown)
         for (int i = 0; i < 6; ++i)
         {
             const int t = proc.slotType (kMainSlots + i);
-            if (t != sendTypes[(size_t) i] || sendButtons[(size_t) i].getButtonText().isEmpty())
+            if (t != sendTypes[(size_t) i])
             {
                 sendTypes[(size_t) i] = t;
                 sendButtons[(size_t) i].setButtonText (t > 0 ? juce::String (moduleInfo (t).shortName) : "+");
@@ -331,188 +357,133 @@ void SlotDetail::tick()
         }
 }
 
-void SlotDetail::resized()
-{
-    auto r = getLocalBounds().reduced (10, 8);
-    auto left = r.removeFromLeft (190);
-    left.removeFromTop (22);
-    auto row = left.removeFromTop (26);
-    power.setBounds (row.removeFromRight (24));
-    row.removeFromRight (6);
-    moduleButton.setBounds (row);
-    left.removeFromTop (6);
-    auto extra = left.removeFromBottom (26);
-    if (slot >= kMainSlots) backButton.setBounds (extra.removeFromLeft (100));
-    captureButton.setBounds (extra.removeFromRight (90));
-    left.removeFromBottom (4);
-    if (mixKnob) mixKnob->setBounds (left.removeFromLeft (left.getWidth() / 2));
-    if (outKnob) outKnob->setBounds (left);
-
-    r.removeFromLeft (14);
-    if (showSends())
-    {
-        auto sends = r.removeFromRight (std::min (300, r.getWidth() / 3));
-        sends.removeFromTop (22);
-        const int rh = sends.getHeight() / 3;
-        for (int p = 0; p < 3; ++p)
-        {
-            auto rr = sends.removeFromTop (rh).reduced (0, 4);
-            rr.removeFromLeft (90);
-            const int bw = (rr.getWidth() - 6) / 2;
-            sendButtons[(size_t) (p * 2)].setBounds (rr.removeFromLeft (bw).withSizeKeepingCentre (bw, std::min (28, rr.getHeight())));
-            rr.removeFromLeft (6);
-            sendButtons[(size_t) (p * 2 + 1)].setBounds (rr.withSizeKeepingCentre (bw, std::min (28, rr.getHeight())));
-        }
-        r.removeFromRight (12);
-    }
-    const int n = (int) knobs.size();
-    if (n == 0) return;
-    const int perRow = n > 6 ? (n + 1) / 2 : n;
-    const int rowsN = (n + perRow - 1) / perRow;
-    const int kw = std::min (96, r.getWidth() / std::max (1, perRow)), kh = r.getHeight() / rowsN;
-    for (int i = 0; i < n; ++i)
-        knobs[(size_t) i]->setBounds (r.getX() + (i % perRow) * kw, r.getY() + (i / perRow) * kh, kw, kh);
-}
-
 void SlotDetail::paint (juce::Graphics& g)
 {
-    using namespace palette;
-    auto r = getLocalBounds().toFloat();
-    g.setColour (panel);
-    g.fillRoundedRectangle (r, 5.0f);
-    const juce::String title = slot < kMainSlots ? "SLOT " + juce::String (slot + 1).paddedLeft ('0', 2)
-                                                 : "SEND " + juce::String (slotLabel (slot));
-    BlockFont::draw (g, title, 12.0f, 12.0f, 9.0f, slot < kMainSlots ? accent : amber);
-    if (showSends())
+    using namespace layout;
+    const float x = dividerX - (float) getX();
+    g.setColour (palette::ink.withAlpha (0.6f));
+    g.drawLine (x, 18.0f, x, (float) getHeight() - 12.0f, 0.8f);
+    if (type > 0) mil::stencil (g, "PWR", L (detailPower).x - 11.0f, L (detailPower).y, 7.4f, juce::Justification::right);
+    if (sendsShown)
     {
-        auto sends = getLocalBounds().reduced (10, 8);
-        sends = sends.removeFromRight (std::min (300, (sends.getWidth() - 204) / 3));
-        BlockFont::draw (g, "SENDS", (float) sends.getX(), 12.0f, 7.0f, textDim);
-        sends.removeFromTop (22);
-        const int rh = sends.getHeight() / 3;
+        const auto a = sendsArea.translated ((float) -getX(), (float) -getY());
+        mil::stencil (g, "SENDS", a.getX(), a.getY(), 8.0f, juce::Justification::left, palette::ink, 1.0f, 0.15f);
         const char* names[] = { "VOICED", "FRICATIVE", "PLOSIVE" };
         for (int p = 0; p < 3; ++p)
-        {
-            auto rr = sends.removeFromTop (rh);
-            BlockFont::draw (g, names[p], (float) rr.getX(), (float) rr.getCentreY() - 3.5f, 7.0f,
-                             p == 0 ? text : p == 1 ? amber : brand);
-        }
+            mil::stencil (g, names[p], a.getX(), a.getY() + 18.0f + (float) p * 38.0f, 7.6f, juce::Justification::left, palette::ink, 1.0f, 0.08f);
     }
-    g.setColour (line);
-    g.drawVerticalLine (204, 10.0f, r.getBottom() - 10.0f);
+    if (type <= 0)
+        mil::stencil (g, "TURN THE MODULE SELECTOR TO FIT A UNIT IN THIS BAY", L ({ 620.0f, 542.0f }).x, L ({ 620.0f, 542.0f }).y, 9.0f,
+                      juce::Justification::centred, palette::ink, 0.8f, 0.12f);
+}
+
+void SlotDetail::ModuleDial::paint (juce::Graphics& g)
+{
+    const Pt c ((float) getWidth() * 0.5f, (float) getHeight() * 0.5f + 7.0f);
+    mil::stencil (g, "MODULE", c.x, c.y - layout::moduleDialR - 17.0f, 8.8f, juce::Justification::centred, palette::ink, 1.0f, 0.12f);
+    juce::StringArray labels;
+    for (int t = 0; t < kNumModuleTypes; ++t) labels.add (moduleAbbrev (t));
+    mil::bigDial (g, c, layout::moduleDialR, (float) std::max (0, owner.type) / (float) kNumModuleTypes, labels);
+}
+
+void SlotDetail::ModuleDial::mouseDown (const juce::MouseEvent&)
+{
+    showModuleMenu (owner.proc, owner.slot, this);
 }
 
 //==============================================================================
 ModMatrixPanel::ModMatrixPanel (HarshVoxProcessor& p) : proc (p)
 {
+    setInterceptsMouseClicks (false, true);
+    KnobLook kl;
+    kl.r = 11.0f; kl.scale = false; kl.labelSize = 7.6f; kl.tagSize = 7.0f;
+    const float colW = layout::CW / (float) kNumMods;
     for (int m = 0; m < kNumMods; ++m)
     {
-        auto& row = rows[(size_t) m];
-        for (int s = 0; s < kNumSources; ++s) row.source.addItem (kSourceNames[s], s + 1);
-        for (int c = 0; c < 3; ++c) row.curve.addItem (kCurveNames[c], c + 1);
-        row.srcAtt = std::make_unique<juce::ComboBoxParameterAttachment> (*proc.param (modIndex (m, MSrc)), row.source);
-        row.curveAtt = std::make_unique<juce::ComboBoxParameterAttachment> (*proc.param (modIndex (m, MCurve)), row.curve);
-        row.target.onChange = [this, m]
+        auto& c = cols[(size_t) m];
+        const float x0 = (float) m * colW + 8.0f;
+        auto make = [&] (int field, const char* name, Pt at)
         {
-            const int id = rows[(size_t) m].target.getSelectedId();
-            if (id > 0) proc.setParamReal (modIndex (m, MTgt), (float) (id - 1));
+            auto k = std::make_unique<ParamKnob> (proc, modIndex (m, field), -1, -1, kl);
+            k->setLabel (name);
+            k->placeAt (at);
+            addAndMakeVisible (*k);
+            return k;
         };
-        row.amount = std::make_unique<ParamKnob> (proc, modIndex (m, MAmt), -1, -1, true);
-        row.amount->setLabel ("Amount");
-        row.thresh = std::make_unique<ParamKnob> (proc, modIndex (m, MThr), -1, -1, true);
-        row.thresh->setLabel ("Threshold");
-        row.smooth = std::make_unique<ParamKnob> (proc, modIndex (m, MSmooth), -1, -1, true);
-        row.smooth->setLabel ("Smooth");
-        row.amount->setBarStyle (true); row.thresh->setBarStyle (true); row.smooth->setBarStyle (true);
-        for (juce::Component* c : { (juce::Component*) &row.source, (juce::Component*) &row.target, (juce::Component*) &row.curve,
-                                    (juce::Component*) row.amount.get(), (juce::Component*) row.thresh.get(), (juce::Component*) row.smooth.get() })
-            addAndMakeVisible (c);
+        c.source = make (MSrc, "Source", { x0 + 44.0f, 40.0f });
+        c.curve  = make (MCurve, "Curve", { x0 + 236.0f, 40.0f });
+        c.amount = make (MAmt, "Amount", { x0 + 44.0f, 104.0f });
+        c.thresh = make (MThr, "Threshold", { x0 + 140.0f, 104.0f });
+        c.smooth = make (MSmooth, "Smooth", { x0 + 236.0f, 104.0f });
+        c.target.setBounds (Rc (x0 + 92.0f, 32.0f, 96.0f, 18.0f).toNearestInt());
+        c.target.onClick = [this, m] { showTargetMenu (m); };
+        addAndMakeVisible (c.target);
     }
-    knownTypes.fill (-1);
-    rebuildTargets();
 }
 
-void ModMatrixPanel::rebuildTargets()
+juce::String ModMatrixPanel::targetName (int m) const
 {
-    for (int s = 0; s < kNumSlots; ++s) knownTypes[(size_t) s] = proc.slotType (s);
-    for (int m = 0; m < kNumMods; ++m)
+    const int tgt = (int) std::lround (proc.paramReal (modIndex (m, MTgt)));
+    if (tgt <= 0) return "NONE";
+    const int s = (tgt - 1) / kTargetsPerSlot, k = (tgt - 1) % kTargetsPerSlot;
+    const int t = proc.slotType (s);
+    if (t <= 0) return "(EMPTY)";
+    const juce::String pn = k == kParamsPerSlot ? juce::String ("Mix") : (k < (int) moduleInfo (t).params.size() ? juce::String (moduleInfo (t).params[(size_t) k].name) : "?");
+    return "S" + juce::String (slotLabel (s)) + " " + pn.toUpperCase();
+}
+
+void ModMatrixPanel::showTargetMenu (int m)
+{
+    juce::PopupMenu menu;
+    menu.addItem (1, "None");
+    for (int s = 0; s < kNumSlots; ++s)
     {
-        auto& cb = rows[(size_t) m].target;
-        cb.clear (juce::dontSendNotification);
-        cb.addItem ("None", 1);
-        for (int s = 0; s < kNumSlots; ++s)
-        {
-            const int t = knownTypes[(size_t) s];
-            if (t <= 0) continue;
-            cb.addSectionHeading ("S" + juce::String (slotLabel (s)) + "  " + moduleInfo (t).name);
-            const auto& specs = moduleInfo (t).params;
-            for (int k = 0; k < (int) specs.size(); ++k)
-                if (specs[(size_t) k].continuous())
-                    cb.addItem ("S" + juce::String (slotLabel (s)) + " " + specs[(size_t) k].name, 2 + s * kTargetsPerSlot + k);
-            cb.addItem ("S" + juce::String (slotLabel (s)) + " Mix", 2 + s * kTargetsPerSlot + kParamsPerSlot);
-        }
+        const int t = proc.slotType (s);
+        if (t <= 0) continue;
+        menu.addSectionHeader ("S" + juce::String (slotLabel (s)) + "  " + moduleInfo (t).name);
+        const auto& specs = moduleInfo (t).params;
+        for (int k = 0; k < (int) specs.size(); ++k)
+            if (specs[(size_t) k].continuous())
+                menu.addItem (2 + s * kTargetsPerSlot + k, "S" + juce::String (slotLabel (s)) + " " + specs[(size_t) k].name);
+        menu.addItem (2 + s * kTargetsPerSlot + kParamsPerSlot, "S" + juce::String (slotLabel (s)) + " Mix");
     }
+    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&cols[(size_t) m].target).withMinimumWidth (220), [this, m] (int id)
+    {
+        if (id <= 0) return;
+        auto* prm = proc.param (modIndex (m, MTgt));
+        prm->beginChangeGesture();
+        proc.setParamReal (modIndex (m, MTgt), (float) (id - 1));
+        prm->endChangeGesture();
+    });
 }
 
 void ModMatrixPanel::tick()
 {
-    bool changed = false;
-    for (int s = 0; s < kNumSlots; ++s) changed |= proc.slotType (s) != knownTypes[(size_t) s];
-    if (changed) rebuildTargets();
     for (int m = 0; m < kNumMods; ++m)
     {
-        auto& row = rows[(size_t) m];
-        const int id = (int) std::lround (proc.paramReal (modIndex (m, MTgt))) + 1;
-        if (row.target.getSelectedId() != id)
-        {
-            if (row.target.indexOfItemId (id) < 0) row.target.setText ("(empty slot)", juce::dontSendNotification);
-            else row.target.setSelectedId (id, juce::dontSendNotification);
-        }
-        row.amount->sync(); row.thresh->sync(); row.smooth->sync();
-    }
-}
-
-void ModMatrixPanel::resized()
-{
-    auto r = getLocalBounds().reduced (10, 8);
-    r.removeFromTop (22);
-    r.removeFromLeft (70);
-    const int rh = r.getHeight() / kNumMods;
-    for (int m = 0; m < kNumMods; ++m)
-    {
-        auto row = r.removeFromTop (rh);
-        auto& rw = rows[(size_t) m];
-        const int ch = std::min (26, row.getHeight() - 4);
-        const int unit = row.getWidth() / 10;
-        auto place = [&row, ch] (juce::Component& c, int w) { c.setBounds (row.removeFromLeft (w).withSizeKeepingCentre (w - 8, ch)); };
-        place (rw.source, unit * 2);
-        place (rw.target, unit * 3);
-        place (rw.curve, (int) (unit * 1.2));
-        const int kw = row.getWidth() / 3;
-        place (*rw.amount, kw);
-        place (*rw.thresh, kw);
-        place (*rw.smooth, row.getWidth());
+        auto& c = cols[(size_t) m];
+        for (auto* k : { c.source.get(), c.curve.get(), c.amount.get(), c.thresh.get(), c.smooth.get() }) k->sync();
+        const auto name = targetName (m);
+        if (c.target.getButtonText() != name) c.target.setButtonText (name);
+        const bool act = proc.paramReal (modIndex (m, MSrc)) > 0.5f && proc.paramReal (modIndex (m, MTgt)) > 0.5f;
+        if (act != c.active) { c.active = act; repaint(); }
     }
 }
 
 void ModMatrixPanel::paint (juce::Graphics& g)
 {
-    using namespace palette;
-    g.setColour (panel);
-    g.fillRoundedRectangle (getLocalBounds().toFloat(), 5.0f);
-    BlockFont::draw (g, "MODULATION", 12.0f, 12.0f, 9.0f, accent);
-    g.setFont (uiFont (11.0f));
-    g.setColour (textDim);
-    g.drawText ("input-reactive only: envelope, pitch and phoneme class drive any continuous parameter",
-                getLocalBounds().reduced (12, 8).removeFromTop (14).withTrimmedLeft (120), juce::Justification::centredLeft);
-    auto r = getLocalBounds().reduced (10, 8);
-    r.removeFromTop (22);
-    const int rh = r.getHeight() / kNumMods;
+    const float colW = layout::CW / (float) kNumMods;
     for (int m = 0; m < kNumMods; ++m)
     {
-        auto row = r.removeFromTop (rh);
-        BlockFont::draw (g, "MOD " + juce::String (m + 1), (float) row.getX() + 4.0f, (float) row.getCentreY() - 3.5f, 7.0f, text);
-        if (m > 0) { g.setColour (line); g.drawHorizontalLine (row.getY(), (float) row.getX(), (float) row.getRight()); }
+        const float x0 = (float) m * colW + 8.0f;
+        if (m > 0)
+        {
+            g.setColour (palette::ink.withAlpha (0.45f));
+            g.drawLine (x0 - 8.0f, 16.0f, x0 - 8.0f, (float) getHeight() - 12.0f, 0.8f);
+        }
+        mil::stencil (g, "MOD " + juce::String (m + 1), x0 + 140.0f, 18.0f, 8.6f, juce::Justification::centred, palette::ink, 1.0f, 0.15f);
+        mil::jewel (g, { x0 + 172.0f, 18.0f }, 3.2f, palette::green, cols[(size_t) m].active);
+        mil::stencil (g, "TARGET", x0 + 140.0f, 61.0f, 7.6f, juce::Justification::centred, palette::ink, 1.0f, 0.05f);
     }
 }
 } // namespace hv::ui

@@ -12,7 +12,22 @@ binary, the version shown in the UI, saved state, and the name of the Windows zi
 line, add a section here, commit, and push a matching tag (`git tag v0.3.0 && git push origin v0.3.0`).
 CI refuses a tag that doesn't match the CMake version and uses this file's section as the release notes.
 
-## [Unreleased] (0.3.0)
+## [0.3.0]
+
+### Changed
+- **New interface: military field-hardware styling.**
+  - The panel: khaki enamel, black fluted bakelite knobs with painted scales, bat toggle switches, jewel
+    lamps, cream VU meters for input and output, a preset drum behind a PROGRAM window, and an engraved
+    data plate.
+  - Module bays: modules are plug-in units with thumbscrews, a name plate and a pull handle; empty bays
+    have blanking plates.
+  - Lower section: a rotary MODULE selector, two green-phosphor CRT scopes, and V/F/P classifier lamps.
+  - The paint finish uses CC0 photo textures (ambientCG): relief, chips, scratches, grime, fingerprints
+    and rust. It is cached per window scale.
+- **Resizing:** the panel now scales as one piece with a fixed aspect ratio, from 900 x 561 to
+  2440 x 1520 (default 1220 x 760). It no longer reflows.
+- Fonts: panel lettering now uses IBM Plex Sans Condensed / Plex Mono (OFL).
+- The preset menu has a "Save preset..." item. The STORE button saves too.
 
 ### Added
 - **Organic Carrier Vocoder: Analyze (Dry / Local)**, default Dry, so existing presets are unchanged. Local

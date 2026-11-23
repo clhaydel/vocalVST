@@ -1,5 +1,5 @@
 // Renders the real editor to PNG (run under xvfb-run) for visual review / docs.
-//   hv_ui_snapshot <out.png> [preset index] [width height] [wav to feed] [selected slot] [mod]
+//   hv_ui_snapshot <out.png> [preset index] [width height] [wav to feed] [selected slot] [mod|chain] [pixel scale]
 #include "plugin/PluginProcessor.h"
 #include "plugin/Presets.h"
 #include "gui/PluginEditor.h"
@@ -19,7 +19,7 @@ int main (int argc, char* argv[])
     std::unique_ptr<juce::AudioProcessorEditor> ed (proc.createEditor());
     ed->setSize (w, h);
     if (argc > 7 && juce::String (argv[7]) == "mod")
-        if (auto* b = dynamic_cast<juce::Button*> (ed->getChildComponent (4))) b->triggerClick();
+        if (auto* he = dynamic_cast<hv::HarshVoxEditor*> (ed.get())) he->setModView (true);
     std::vector<hvtest::Signal> in;
     double fsr = sr;
     if (argc > 5) hvtest::readWav (juce::File::getCurrentWorkingDirectory().getChildFile (argv[5]), in, fsr);
@@ -34,7 +34,8 @@ int main (int argc, char* argv[])
         if ((pos / 128) % 12 == 0) juce::MessageManager::getInstance()->runDispatchLoopUntil (1);
     }
     juce::MessageManager::getInstance()->runDispatchLoopUntil (120);
-    auto img = ed->createComponentSnapshot (ed->getLocalBounds(), true, 1.0f);
+    const float pxScale = argc > 8 ? (float) juce::String (argv[8]).getDoubleValue() : 1.0f;
+    auto img = ed->createComponentSnapshot (ed->getLocalBounds(), true, pxScale);
     juce::PNGImageFormat png;
     out.deleteFile();
     juce::FileOutputStream os (out);

@@ -1,79 +1,150 @@
 #pragma once
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "Palette.h"
+#include "MilDraw.h"
 #include "BlockFont.h"
 #include "plugin/PluginProcessor.h"
 
 namespace hv::ui
 {
+/** Popup menus, dialogs and tooltips (the panel itself is drawn by the components). */
 class LookAndFeel final : public juce::LookAndFeel_V4
 {
 public:
     LookAndFeel();
-    void drawRotarySlider (juce::Graphics&, int x, int y, int w, int h, float pos, float start, float end, juce::Slider&) override;
-    void drawButtonBackground (juce::Graphics&, juce::Button&, const juce::Colour&, bool over, bool down) override;
-    void drawButtonText (juce::Graphics&, juce::TextButton&, bool over, bool down) override;
-    void drawComboBox (juce::Graphics&, int w, int h, bool down, int bx, int by, int bw, int bh, juce::ComboBox&) override;
-    juce::Font getComboBoxFont (juce::ComboBox&) override { return uiFont (12.0f); }
     juce::Font getPopupMenuFont() override { return uiFont (13.0f); }
     void drawPopupMenuBackground (juce::Graphics&, int w, int h) override;
     juce::Font getTextButtonFont (juce::TextButton&, int h) override { return uiFont (std::min (13.0f, (float) h * 0.55f)); }
+    juce::Font getAlertWindowMessageFont() override { return uiFont (14.0f); }
+    juce::Font getAlertWindowTitleFont() override { return uiFont (17.0f); }
+    juce::Font getLabelFont (juce::Label&) override { return uiFont (14.0f); }
 };
 
-/** Rotary knob bound to one processor parameter (by global index), with name/value text and an
-    outer ring showing the live (input-reactive / modulated) value for slot parameters. */
+struct KnobLook
+{
+    float r = 14.0f;
+    bool scale = true;          // painted tick scale
+    bool numbers = false;       // 0..10 numerals on the scale
+    bool label = true, valueTag = true;
+    bool seedDial = false;      // knurled multi-turn dial (global Seed)
+    float labelSize = 8.0f, tagSize = 7.2f;
+};
+
+/** Rotary control bound to one processor parameter (by global index). Black bakelite knob, painted scale,
+    stencil label and an engraved value tag; slot parameters also show their live (reactive/modulated) value. */
 class ParamKnob final : public juce::Component
 {
 public:
-    ParamKnob (HarshVoxProcessor& p, int paramIndex, int slot = -1, int liveIndex = -1, bool compact = false);
-    /** Horizontal value-bar style (for dense rows such as the mod matrix). */
-    void setBarStyle (bool b);
+    ParamKnob (HarshVoxProcessor& p, int paramIndex, int slot = -1, int liveIndex = -1, KnobLook look = {});
+    /** Position by the knob centre, in parent coordinates. */
+    void placeAt (juce::Point<float> centre);
     void sync();
-    void resized() override;
     void paint (juce::Graphics&) override;
+    void resized() override;
     void setLabel (const juce::String& s) { label = s; repaint(); }
     juce::String currentName() const;
-    float liveValue = -1.0f;   // <0: no live ring
-    bool  showLive = false;
 
 private:
     class KnobSlider : public juce::Slider
     {
     public:
-        ParamKnob* owner = nullptr;
-        void paint (juce::Graphics& g) override;
+        void paint (juce::Graphics&) override {}
     };
     void configureSteps();
+    juce::Point<float> centre() const;
     HarshVoxProcessor& proc;
     int index, slot, liveIdx;
-    bool compact;
+    KnobLook look;
     KnobSlider slider;
-    juce::String label;
-    bool syncing = false, dragging = false;
-    int steps = 0;
-    int lastType = -1;
-    bool bar = false;
+    juce::String label, shownText;
+    bool syncing = false, dragging = false, showLive = false;
+    int steps = 0, lastType = -1;
+    float liveValue = -1.0f, shownValue = -1.0f;
 };
 
-/** Vertical peak meter fed from an atomic peak value (exchanged to 0 on read). */
-class Meter final : public juce::Component
+/** Bat-handle toggle switch. Bound to a parameter (2-state) or driven by a callback. */
+class ToggleSwitch final : public juce::Component, public juce::SettableTooltipClient
 {
 public:
-    explicit Meter (std::atomic<float>* a, std::atomic<float>* b = nullptr) : srcA (a), srcB (b) {}
+    /** Parameter-bound: up = normalised value >= 0.5. */
+    ToggleSwitch (HarshVoxProcessor& p, int paramIndex, float size = 1.0f);
+    /** Free-standing (UI state). */
+    explicit ToggleSwitch (float size = 1.0f);
+    void setTexts (const juce::String& upText, const juce::String& downText, const juce::String& name);
+    void placeAt (juce::Point<float> centre);
+    void setUp (bool u);
+    bool isUp() const { return up; }
+    void sync();
+    void paint (juce::Graphics&) override;
+    void mouseDown (const juce::MouseEvent&) override;
+    std::function<void (bool)> onChange;
+    float nameSize = 7.8f;
+
+private:
+    HarshVoxProcessor* proc = nullptr;
+    int index = -1;
+    float size;
+    bool up = false;
+    juce::String upText, downText, name;
+};
+
+/** Round push button (chrome bezel, coloured cap) with an optional painted label. */
+class PushButton final : public juce::Button
+{
+public:
+    PushButton (juce::Colour cap, float radius, const juce::String& label = {}, bool labelRight = false);
+    void placeAt (juce::Point<float> centre);
+    void paintButton (juce::Graphics&, bool over, bool down) override;
+
+private:
+    juce::Colour cap;
+    float r;
+    juce::String text;
+    bool right;
+};
+
+/** Black engraved tag that acts as a button (sends, menus). */
+class TagButton final : public juce::Button
+{
+public:
+    TagButton() : juce::Button ({}) {}
+    void paintButton (juce::Graphics&, bool over, bool down) override;
+    float textSize = 7.6f;
+    juce::Colour textColour = palette::tagText;
+};
+
+/** Jewel indicator lamp. */
+class Lamp final : public juce::Component
+{
+public:
+    Lamp (juce::Colour c, float radius, const juce::String& label = {}) : col (c), r (radius), text (label) { setInterceptsMouseClicks (false, false); }
+    void placeAt (juce::Point<float> centre);
+    void setLit (bool l) { if (l != lit) { lit = l; repaint(); } }
+    void paint (juce::Graphics&) override;
+
+private:
+    juce::Colour col;
+    float r;
+    juce::String text;
+    bool lit = false;
+};
+
+/** Cream-faced VU meter fed from atomic peak values (exchanged to 0 on read). 0 dBFS = +3 VU. */
+class VuMeter final : public juce::Component
+{
+public:
+    VuMeter (std::atomic<float>* a, std::atomic<float>* b, const juce::String& title) : srcA (a), srcB (b), name (title) { setInterceptsMouseClicks (false, false); }
+    void setArea (juce::Rectangle<float> r);
     void tick();
+    bool hot() const { return hotCount > 0; }
     void paint (juce::Graphics&) override;
 
 private:
     std::atomic<float>* srcA;
     std::atomic<float>* srcB;
-    float levelA = 0, levelB = 0, holdA = 0, holdB = 0;
-    int holdCount = 0;
-};
-
-/** Small square on/off button drawn as a power toggle. */
-class PowerButton final : public juce::ToggleButton
-{
-public:
-    void paintButton (juce::Graphics&, bool over, bool down) override;
+    juce::String name;
+    juce::Rectangle<float> area;
+    float needle = -20.0f;
+    int hotCount = 0;
 };
 } // namespace hv::ui
