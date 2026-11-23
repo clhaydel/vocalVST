@@ -12,6 +12,23 @@ binary, the version shown in the UI, saved state, and the name of the Windows zi
 line, add a section here, commit, and push a matching tag (`git tag v0.3.0 && git push origin v0.3.0`).
 CI refuses a tag that doesn't match the CMake version and uses this file's section as the release notes.
 
+## [0.4.0]
+
+### Changed
+- **New panel finish: slate-blue field hardware**, matching the edited reference mock-up.
+  - Slate-blue enamel; each section is a separate screwed-on plate on a painted frame.
+  - Dark title bar: the Harsh Vox name, a PROGRAM preset field with up / down steppers, and icons for
+    save, reset to Init, random Seed, limiter activity (bell), the preset menu and About.
+  - Top row: the Static Ruin mark (replaces the "MASTER CONTROL" label), a worn steel nameplate, chrome
+    PREV / NEXT buttons, a backlit PROGRAM LCD, STORE and the POWER lamp.
+  - Cream knurled knobs with dot scales; a black multi-turn Seed dial in a tick ring.
+  - The INPUT and MOD VIEW switches carry their name above the switch.
+  - Empty bays are screwed blanking plates; the MODULE selector is a knurled ring round a cream knob.
+  - The selected-module section is split into two plates; the scopes sit on their own plate with
+    captions on black tags.
+- Panel lettering now uses IBM Plex Sans Bold (OFL); the nameplate uses Plex Sans Condensed.
+- The LIMIT lamp moved to the title-bar bell icon.
+
 ## [0.3.0]
 
 ### Changed

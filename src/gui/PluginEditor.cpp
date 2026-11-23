@@ -10,7 +10,14 @@ using Pt = juce::Point<float>;
 
 namespace
 {
-/** Preset drum behind the PROGRAM window: current preset with its neighbours rolling off the cylinder. */
+juce::String presetLabel (int i) { return juce::String (i + 1).paddedLeft ('0', 2) + "  " + factoryPresetName (i).toUpperCase(); }
+int presetIndex (const juce::String& name)
+{
+    for (int i = 0; i < numFactoryPresets(); ++i) if (factoryPresetName (i) == name) return i;
+    return -1;
+}
+
+/** Backlit LCD behind the PROGRAM bezel: current preset large, the next one small underneath. */
 class ProgramWindow final : public juce::Component, public juce::SettableTooltipClient
 {
 public:
@@ -24,35 +31,82 @@ public:
     void paint (juce::Graphics& g) override
     {
         const auto r = getLocalBounds().toFloat();
-        juce::ColourGradient drum (juce::Colour::fromFloatRGBA (0.30f, 0.28f, 0.22f, 1), 0, r.getY(), juce::Colour::fromFloatRGBA (0.30f, 0.28f, 0.22f, 1), 0, r.getBottom(), false);
-        drum.addColour (0.25, juce::Colour::fromFloatRGBA (0.86f, 0.81f, 0.66f, 1));
-        drum.addColour (0.5, juce::Colour::fromFloatRGBA (0.95f, 0.91f, 0.77f, 1));
-        drum.addColour (0.75, juce::Colour::fromFloatRGBA (0.86f, 0.81f, 0.66f, 1));
-        g.setGradientFill (drum);
+        g.setGradientFill (juce::ColourGradient (juce::Colour::fromFloatRGBA (0.70f, 0.74f, 0.64f, 1), r.getX(), r.getY(),
+                                                 juce::Colour::fromFloatRGBA (0.52f, 0.56f, 0.47f, 1), r.getX(), r.getBottom(), false));
         g.fillRoundedRectangle (r, 3.0f);
-        const int n = numFactoryPresets();
-        int cur = -1;
-        for (int i = 0; i < n; ++i) if (factoryPresetName (i) == shown) cur = i;
-        auto line = [&] (const juce::String& s, float y, float size, float alpha)
+        // inner shadow from the bezel
+        for (int i = 0; i < 5; ++i)
         {
-            g.setFont (tagFont (size));
-            g.setColour (palette::black.withAlpha (alpha));
-            g.drawFittedText (s, Rc (r.getX() + 18.0f, y - size, r.getWidth() - 36.0f, size * 2.0f).toNearestInt(), juce::Justification::centred, 1, 0.7f);
-        };
-        auto label = [] (int i) { return juce::String (i + 1).paddedLeft ('0', 2) + "  " + factoryPresetName (i).toUpperCase(); };
+            g.setColour (juce::Colours::black.withAlpha (0.10f));
+            g.drawRoundedRectangle (r.reduced ((float) i), 3.0f, 1.0f);
+        }
+        const int n = numFactoryPresets(), cur = presetIndex (shown);
+        const auto ink = juce::Colour::fromFloatRGBA (0.07f, 0.09f, 0.07f, 1.0f);
+        g.setFont (tagFont (17.0f));
+        g.setColour (ink);
+        g.drawFittedText (cur >= 0 ? presetLabel (cur) : "USER  " + shown.toUpperCase(), Rc (r.getX() + 30.0f, r.getY() + 5.0f, r.getWidth() - 60.0f, 24.0f).toNearestInt(),
+                          juce::Justification::centred, 1, 0.6f);
         if (cur >= 0)
         {
-            line (label ((cur - 1 + n) % n), r.getY() + 7.0f, 9.0f, 0.35f);
-            line (label ((cur + 1) % n), r.getBottom() - 7.0f, 9.0f, 0.35f);
-            line (label (cur), r.getCentreY(), 15.0f, 1.0f);
+            g.setFont (tagFont (9.0f));
+            g.setColour (ink.withAlpha (0.55f));
+            g.drawFittedText (presetLabel ((cur + 1) % n), Rc (r.getX() + 30.0f, r.getBottom() - 19.0f, r.getWidth() - 60.0f, 13.0f).toNearestInt(),
+                              juce::Justification::centred, 1, 0.7f);
         }
-        else line ("USER  " + shown.toUpperCase(), r.getCentreY(), 15.0f, 1.0f);
-        g.setColour (palette::red.withAlpha (0.85f));
-        g.drawLine (r.getX() + 4, r.getCentreY(), r.getX() + 14, r.getCentreY(), 1.2f);
-        g.drawLine (r.getRight() - 14, r.getCentreY(), r.getRight() - 4, r.getCentreY(), 1.2f);
-        g.setGradientFill (juce::ColourGradient (juce::Colours::white.withAlpha (0.22f), r.getX(), r.getY(), juce::Colours::white.withAlpha (0.0f),
+        g.setColour (palette::red);
+        g.fillRect (r.getX() + 8.0f, r.getY() + 16.0f, 13.0f, 2.2f);
+        g.fillRect (r.getRight() - 21.0f, r.getY() + 16.0f, 13.0f, 2.2f);
+        g.setGradientFill (juce::ColourGradient (juce::Colours::white.withAlpha (0.16f), r.getX(), r.getY(), juce::Colours::white.withAlpha (0.0f),
                                                  r.getX() + r.getWidth() * 0.4f, r.getBottom(), false));
         g.fillRoundedRectangle (r, 3.0f);
+    }
+
+private:
+    HarshVoxProcessor& proc;
+    juce::String shown;
+};
+
+/** Preset field in the title bar: up / down steppers, the name, and a menu diamond. */
+class HeaderProgram final : public juce::Component, public juce::SettableTooltipClient
+{
+public:
+    explicit HeaderProgram (HarshVoxProcessor& p) : proc (p)
+    {
+        addAndMakeVisible (up);
+        addAndMakeVisible (down);
+        up.setTooltip ("Previous preset");
+        down.setTooltip ("Next preset");
+        setMouseCursor (juce::MouseCursor::PointingHandCursor);
+    }
+    IconButton up { IconButton::Kind::up }, down { IconButton::Kind::down };
+    std::function<void()> onClick;
+    void resized() override
+    {
+        up.setBounds (2, 1, 22, getHeight() / 2 - 1);
+        down.setBounds (2, getHeight() / 2, 22, getHeight() / 2 - 1);
+    }
+    void mouseDown (const juce::MouseEvent&) override { if (onClick) onClick(); }
+    void update() { if (proc.currentPresetName != shown) { shown = proc.currentPresetName; repaint(); } }
+    void paint (juce::Graphics& g) override
+    {
+        const auto r = getLocalBounds().toFloat();
+        g.setColour (juce::Colour (0xff0c0c0d));
+        g.fillRoundedRectangle (r, 3.0f);
+        g.setColour (juce::Colours::white.withAlpha (0.10f));
+        g.drawRoundedRectangle (r.reduced (0.5f), 3.0f, 1.0f);
+        g.setColour (juce::Colours::white.withAlpha (0.12f));
+        g.drawLine (26.0f, 4.0f, 26.0f, r.getBottom() - 4.0f, 1.0f);
+        g.setFont (stencilFont (7.4f).withExtraKerningFactor (0.1f));
+        g.setColour (palette::textDim);
+        g.drawText ("PROGRAM", r.withHeight (11.0f).translated (0.0f, 1.0f), juce::Justification::centred, false);
+        const int cur = presetIndex (shown);
+        g.setFont (tagFont (11.0f));
+        g.setColour (palette::ink);
+        g.drawFittedText (cur >= 0 ? presetLabel (cur) : "USER  " + shown.toUpperCase(), Rc (30.0f, 11.0f, r.getWidth() - 56.0f, 16.0f).toNearestInt(),
+                          juce::Justification::centred, 1, 0.7f);
+        juce::Path d;
+        d.addQuadrilateral (r.getRight() - 14.0f, 10.0f, r.getRight() - 10.5f, 14.0f, r.getRight() - 14.0f, 18.0f, r.getRight() - 17.5f, 14.0f);
+        g.fillPath (d);
     }
 
 private:
@@ -66,14 +120,48 @@ class HarshVoxEditor::Panel final : public juce::Component, private juce::Timer
 {
 public:
     Panel (HarshVoxEditor& e, HarshVoxProcessor& p)
-        : ed (e), proc (p), program (p), vuIn (&p.engine().inPeak, nullptr, "INPUT"), vuOut (&p.engine().outPeakL, &p.engine().outPeakR, "OUTPUT"),
+        : ed (e), proc (p), program (p), headerProgram (p), vuIn (&p.engine().inPeak, nullptr, "INPUT"), vuOut (&p.engine().outPeakL, &p.engine().outPeakR, "OUTPUT"),
           inputMode (p, InputMode, 1.0f), chain (p), detail (p), modPanel (p), analysis (p)
     {
         using namespace layout;
         setOpaque (true);
-        program.setBounds (programWin.toNearestInt());
+        // title bar
+        headerProgram.setBounds (layout::headerProgram.toNearestInt());
+        headerProgram.onClick = [this] { ed.showPresetMenu (&headerProgram); };
+        headerProgram.up.onClick = [this] { ed.stepPreset (-1); };
+        headerProgram.down.onClick = [this] { ed.stepPreset (1); };
+        headerProgram.setTooltip ("Click for presets: factory, user, load / save, export as code");
+        addAndMakeVisible (headerProgram);
+        IconButton* icons[] = { &iconSave, &iconInit, &iconDice, &iconBell, &iconMenu, &iconPower };
+        for (int i = 0; i < 6; ++i)
+        {
+            icons[i]->setBounds (Rc (26.0f, 26.0f).withCentre ({ headerIconX[i], headerIconY }).toNearestInt());
+            addAndMakeVisible (*icons[i]);
+        }
+        iconSave.setTooltip ("Save the current settings as a user preset (.hvx)");
+        iconSave.onClick = [this] { ed.savePreset(); };
+        iconInit.setTooltip ("Reset to Init: empties every bay and returns all controls to their defaults");
+        iconInit.onClick = [this] { ed.confirmInit(); };
+        iconDice.setTooltip ("Roll a new random Seed");
+        iconDice.onClick = [this]
+        {
+            auto* prm = proc.param (Seed);
+            prm->beginChangeGesture();
+            prm->setValueNotifyingHost (juce::Random::getSystemRandom().nextFloat());
+            prm->endChangeGesture();
+        };
+        iconBell.setTooltip ("Output limiter: lights while the safety limiter is catching peaks");
+        iconBell.setInterceptsMouseClicks (false, false);
+        iconMenu.setTooltip ("Preset menu");
+        iconMenu.onClick = [this] { ed.showPresetMenu (&iconMenu); };
+        iconPower.setTooltip ("About Harsh Vox");
+        iconPower.onClick = [this] { ed.showAbout(); };
+
+        program.setBounds (programWin.reduced (11.0f, 10.0f).toNearestInt());
         program.onClick = [this] { ed.showPresetMenu (&program); };
         program.setTooltip ("Click for presets: factory, user, load / save, export as code");
+        prev.arrow = -1; next.arrow = 1;
+        for (auto* b : { &prev, &next, &store }) { b->labelGap = 22.0f; b->labelSize = 9.0f; }
         prev.placeAt (prevBtn);
         next.placeAt (nextBtn);
         store.placeAt (storeBtn);
@@ -81,17 +169,17 @@ public:
         next.onClick = [this] { ed.stepPreset (1); };
         store.onClick = [this] { ed.savePreset(); };
         store.setTooltip ("Save the current settings as a user preset (.hvx)");
+        powerLamp.labelGap = 26.0f;
         powerLamp.placeAt (layout::powerLamp);
         powerLamp.setLit (true);
-        limitLamp.placeAt (layout::limitLamp);
         vuIn.setArea (layout::vuIn);
         vuOut.setArea (layout::vuOut);
         for (auto* c : { (juce::Component*) &program, (juce::Component*) &prev, (juce::Component*) &next, (juce::Component*) &store,
-                         (juce::Component*) &powerLamp, (juce::Component*) &limitLamp, (juce::Component*) &vuIn, (juce::Component*) &vuOut })
+                         (juce::Component*) &powerLamp, (juce::Component*) &vuIn, (juce::Component*) &vuOut })
             addAndMakeVisible (c);
 
         KnobLook gl;
-        gl.r = masterKnobR; gl.numbers = true; gl.labelSize = 8.6f; gl.tagSize = 7.4f;
+        gl.r = masterKnobR; gl.numbers = true; gl.labelSize = 9.6f; gl.tagSize = 8.0f;
         const std::pair<int, const char*> g[] = { { InGain, "Input" }, { EnvAtk, "Env Atk" }, { EnvRel, "Env Rel" }, { Mix, "Mix" }, { OutGain, "Output" } };
         for (int i = 0; i < 5; ++i)
         {
@@ -101,12 +189,13 @@ public:
             addAndMakeVisible (*globals.back());
         }
         KnobLook sl;
-        sl.r = seedR; sl.seedDial = true; sl.labelSize = 8.6f; sl.tagSize = 7.4f;
+        sl.r = seedR; sl.seedDial = true; sl.labelSize = 9.6f; sl.tagSize = 8.0f;
         seed = std::make_unique<ParamKnob> (proc, Seed, -1, -1, sl);
         seed->setLabel ("Seed");
         seed->placeAt (seedDial);
         addAndMakeVisible (*seed);
-        inputMode.setTexts ("STEREO", "MONO", "INPUT MODE");
+        for (auto* t : { &inputMode, &modView }) { t->nameOnTop = true; t->nameSize = 9.6f; }
+        inputMode.setTexts ("STEREO", "MONO", "INPUT");
         inputMode.placeAt (inputModeSw);
         inputMode.setTooltip ("STEREO keeps left/right separate through the chain; MONO sums the input first. Not changed by presets.");
         addAndMakeVisible (inputMode);
@@ -120,13 +209,15 @@ public:
         detail.setBounds (detailPlate.toNearestInt());
         modPanel.setBounds (detailPlate.toNearestInt());
         analysis.setBounds (Rc (scopeL.getX(), scopeL.getY(), scopeR.getRight() - scopeL.getX(), scopeL.getHeight()).toNearestInt());
-        classifier.setBounds (Rc (layout::classifier.x - 50.0f, layout::classifier.y - 8.0f, 100.0f, 104.0f).toNearestInt());
+        classifier.setBounds (Rc (layout::classifier.x - 60.0f, layout::classifier.y - 8.0f, 120.0f, 118.0f).toNearestInt());
         addAndMakeVisible (chain);
         addAndMakeVisible (detail);
         addChildComponent (modPanel);
         addAndMakeVisible (analysis);
         addAndMakeVisible (classifier);
     }
+
+    static Rc titleArea() { return { layout::detailTag.x - 4.0f, layout::detailTag.y - 12.0f, 420.0f, 24.0f }; }
 
     void paint (juce::Graphics& g) override
     {
@@ -137,36 +228,33 @@ public:
         g.setImageResamplingQuality (juce::Graphics::highResamplingQuality);
         g.drawImageTransformed (art, juce::AffineTransform::scale (1.0f / artScale));
         // dynamic lettering on the baked panel
-        mil::sectionTag (g, layout::detailPlate.getX(), layout::detailPlate.getY(),
-                         modPanel.isVisible() ? juce::String ("MODULATION MATRIX  -  INPUT-REACTIVE ONLY") : detail.title());
+        if (! modPanel.isVisible()) mil::sectionTag (g, layout::detailTag.x, layout::detailTag.y, detail.title());
+        // latency counter: four drum digits, tenths after the point
         const auto lb = layout::latencyBox;
-        const juce::String digits = latencyText.paddedLeft ('0', 5);
-        float x = lb.getX() + 5.0f;
-        for (auto ch : digits)
+        const juce::String digits = latencyText.removeCharacters (".").paddedLeft ('0', 4).getLastCharacters (4);
+        for (int i = 0; i < 4; ++i)
         {
-            if (ch == '.')
-            {
-                g.setColour (palette::ink);
-                g.fillEllipse (x - 0.5f, lb.getBottom() - 6.0f, 2.6f, 2.6f);
-                x += 4.0f;
-                continue;
-            }
-            const Rc cell (x, lb.getY() + 3.0f, 13.0f, lb.getHeight() - 6.0f);
-            g.setColour (juce::Colour::fromFloatRGBA (0.93f, 0.92f, 0.86f, 1));
-            g.fillRoundedRectangle (cell, 1.0f);
-            g.setFont (tagFont (11.0f));
+            const Rc cell (lb.getX() + 5.0f + (float) i * 22.5f + (i == 3 ? 3.0f : 0.0f), lb.getY() + 4.0f, 18.0f, lb.getHeight() - 8.0f);
+            juce::ColourGradient drum (juce::Colour::fromFloatRGBA (0.55f, 0.54f, 0.50f, 1), 0, cell.getY(), juce::Colour::fromFloatRGBA (0.55f, 0.54f, 0.50f, 1), 0, cell.getBottom(), false);
+            drum.addColour (0.3, juce::Colour::fromFloatRGBA (0.95f, 0.94f, 0.89f, 1));
+            drum.addColour (0.7, juce::Colour::fromFloatRGBA (0.95f, 0.94f, 0.89f, 1));
+            g.setGradientFill (drum);
+            g.fillRoundedRectangle (cell, 1.5f);
+            g.setFont (tagFont (14.0f));
             g.setColour (palette::black);
-            g.drawText (juce::String::charToString (ch), cell, juce::Justification::centred, false);
-            x += 16.0f;
+            g.drawText (juce::String::charToString (digits[i]), cell.translated (0.0f, 0.5f), juce::Justification::centred, false);
         }
+        g.setColour (palette::ink);
+        g.fillEllipse (lb.getX() + 5.0f + 3.0f * 22.5f - 1.5f, lb.getBottom() - 8.0f, 2.6f, 2.6f);
     }
 
     void tick()
     {
         program.update();
+        headerProgram.update();
         vuIn.tick();
         vuOut.tick();
-        limitLamp.setLit (vuOut.hot());
+        iconBell.setLit (vuOut.hot());
         for (auto& k : globals) k->sync();
         seed->sync();
         inputMode.sync();
@@ -179,15 +267,19 @@ public:
         const auto lt = juce::String (std::min (999.9, ms), 1);
         if (lt != latencyText) { latencyText = lt; repaint (layout::latencyBox.expanded (2.0f).toNearestInt()); }
         const auto t = modPanel.isVisible() ? juce::String() : detail.title();
-        if (t != shownTitle) { shownTitle = t; repaint (Rc (layout::detailPlate.getX(), layout::detailPlate.getY() - 10.0f, 520.0f, 20.0f).toNearestInt()); }
+        if (t != shownTitle) { shownTitle = t; repaint (titleArea().toNearestInt()); }
         if (chain.occupancy() != artOcc) repaint();
     }
 
     HarshVoxEditor& ed;
     HarshVoxProcessor& proc;
     ProgramWindow program;
-    PushButton prev { juce::Colour (0xff1e1e1c), 9.0f, "< PREV" }, next { juce::Colour (0xff1e1e1c), 9.0f, "NEXT >" }, store { palette::red, 10.0f, "STORE" };
-    Lamp powerLamp { juce::Colour (0xffff2e14), 5.5f }, limitLamp { palette::amber, 5.5f };
+    HeaderProgram headerProgram;
+    IconButton iconSave { IconButton::Kind::save }, iconInit { IconButton::Kind::init }, iconDice { IconButton::Kind::dice },
+               iconBell { IconButton::Kind::bell }, iconMenu { IconButton::Kind::menu }, iconPower { IconButton::Kind::power };
+    PushButton prev { juce::Colour (0xffa9aeb6), layout::roundBtnR, "PREV" }, next { juce::Colour (0xffa9aeb6), layout::roundBtnR, "NEXT" },
+               store { palette::red, layout::roundBtnR - 1.0f, "STORE" };
+    Lamp powerLamp { palette::amber, 10.0f, "POWER" };
     VuMeter vuIn, vuOut;
     std::vector<std::unique_ptr<ParamKnob>> globals;
     std::unique_ptr<ParamKnob> seed;
@@ -275,7 +367,7 @@ void HarshVoxEditor::selectSlot (int s)
     panel->chain.setSelected (s);
     panel->detail.setSlot (s);
     if (panel->modPanel.isVisible()) setModView (false);
-    panel->repaint (Rc (layout::detailPlate.getX(), layout::detailPlate.getY() - 10.0f, 520.0f, 20.0f).toNearestInt());
+    panel->repaint (Panel::titleArea().toNearestInt());
 }
 
 void HarshVoxEditor::timerCallback()
@@ -334,6 +426,19 @@ void HarshVoxEditor::showPresetMenu (juce::Component* target)
                                   [this] (const juce::FileChooser& fc) { if (fc.getResult().existsAsFile()) proc.loadPresetFile (fc.getResult()); });
         }
     });
+}
+
+void HarshVoxEditor::confirmInit()
+{
+    juce::AlertWindow::showOkCancelBox (juce::MessageBoxIconType::QuestionIcon, "Reset to Init",
+                                        "Empty every bay and return all controls to their defaults?", "Reset", "Cancel", this,
+                                        juce::ModalCallbackFunction::create ([this] (int r) { if (r == 1) proc.setCurrentProgram (0); }));
+}
+
+void HarshVoxEditor::showAbout()
+{
+    juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::NoIcon, "Harsh Vox  v" HV_VERSION_STRING,
+        "Vocal Destruction Set No. 13\nStatic Ruin\n\nFonts: IBM Plex (OFL). Panel textures: ambientCG (CC0).", "OK", this);
 }
 
 void HarshVoxEditor::exportPreset()

@@ -13,6 +13,11 @@ juce::Typeface::Ptr face (const char* data, int size) { return juce::Typeface::c
 }
 juce::Font stencilFont (float h)
 {
+    static auto tf = face (BinaryData::IBMPlexSansBold_ttf, BinaryData::IBMPlexSansBold_ttfSize);
+    return juce::Font (juce::FontOptions (tf).withHeight (h));
+}
+juce::Font condensedFont (float h)
+{
     static auto tf = face (BinaryData::IBMPlexSansCondensedBold_ttf, BinaryData::IBMPlexSansCondensedBold_ttfSize);
     return juce::Font (juce::FontOptions (tf).withHeight (h));
 }
@@ -95,22 +100,23 @@ ParamKnob::ParamKnob (HarshVoxProcessor& p, int paramIndex, int s, int li, KnobL
     sync();
 }
 
-Pt ParamKnob::centre() const
+float ParamKnob::topSpace() const
 {
     const float r = look.r;
-    const float top = look.seedDial ? r + 12.0f : (look.scale ? (look.numbers ? r + 19.0f : r + 10.0f) : r + 5.0f);
-    return { (float) getWidth() * 0.5f, top };
+    return look.seedDial ? r + 20.0f : (look.scale ? (look.numbers ? r + 13.0f : r + 10.0f) : r + 5.0f);
 }
+float ParamKnob::labelOffset() const { return look.r + (look.seedDial ? 24.0f : (look.numbers ? 26.0f : (look.r < 13.0f ? 9.0f : 11.0f))); }
+float ParamKnob::tagOffset() const { return labelOffset() + (look.seedDial || look.numbers ? 17.0f : (look.r < 13.0f ? 10.0f : 11.0f)); }
+
+Pt ParamKnob::centre() const { return { (float) getWidth() * 0.5f, topSpace() }; }
 
 void ParamKnob::placeAt (Pt c)
 {
     const float r = look.r;
-    const float half = look.numbers || look.seedDial ? r + 19.0f : r + 11.0f;
+    const float half = look.numbers || look.seedDial ? r + 21.0f : r + 11.0f;
     const float w = std::max (2.0f * half, r < 13.0f ? 58.0f : 80.0f);
-    const float top = look.seedDial ? r + 12.0f : (look.scale ? (look.numbers ? r + 19.0f : r + 10.0f) : r + 5.0f);
-    const float labelY = r + (look.numbers ? 17.0f : 10.0f);
-    const float tagY = labelY + (look.numbers ? 11.5f : 10.0f);
-    const float h = top + tagY + look.tagSize * 0.5f + 6.0f;
+    const float top = topSpace();
+    const float h = top + tagOffset() + look.tagSize * 0.5f + 6.0f;
     setBounds (juce::Rectangle<float> (c.x - w * 0.5f, c.y - top, w, h).getSmallestIntegerContainer());
 }
 
@@ -190,20 +196,16 @@ void ParamKnob::paint (juce::Graphics& g)
     const auto c = centre();
     const float r = look.r;
     const float v = (float) slider.getValue();
-    if (look.seedDial)
-    {
-        static const juce::StringArray digits { "0", "1", "2", "3", "4", "5", "6", "7", "8", "9" };
-        mil::bigDial (g, c, r, v * 10.0f, digits);
-    }
+    if (look.seedDial) mil::seedDial (g, c, r, v * 10.0f);
     else
     {
         if (look.scale) mil::knobScale (g, c, r, look.numbers);
-        mil::bakelite (g, c, r, v);
+        mil::creamKnob (g, c, r, v);
     }
     if (showLive && liveValue >= 0.0f && ! look.seedDial)
     {
         const float a0 = juce::degreesToRadians (135.0f + 270.0f * v), a1 = juce::degreesToRadians (135.0f + 270.0f * liveValue);
-        const float rr = r + 2.6f;
+        const float rr = r + 3.2f;
         juce::Path arc;
         arc.addCentredArc (c.x, c.y, rr, rr, 0.0f, std::min (a0, a1) + juce::MathConstants<float>::halfPi,
                            std::max (a0, a1) + juce::MathConstants<float>::halfPi + 0.001f, true);
@@ -211,11 +213,10 @@ void ParamKnob::paint (juce::Graphics& g)
         g.strokePath (arc, juce::PathStrokeType (1.8f));
         g.fillEllipse (Rc (3.6f, 3.6f).withCentre ({ c.x + std::cos (a1) * rr, c.y + std::sin (a1) * rr }));
     }
-    const float labelY = c.y + r + (look.numbers ? 17.0f : 10.0f);
     if (look.label)
-        mil::stencil (g, currentName().toUpperCase(), c.x, labelY, look.labelSize, juce::Justification::centred, palette::ink, 1.0f, 0.05f);
+        mil::stencil (g, currentName().toUpperCase(), c.x, c.y + labelOffset(), look.labelSize, juce::Justification::centred, palette::ink, 1.0f, 0.03f);
     if (look.valueTag)
-        mil::tag (g, { c.x, labelY + (look.numbers ? 11.5f : 10.0f) }, shownText, look.tagSize);
+        mil::tag (g, { c.x, c.y + tagOffset() }, shownText, look.tagSize);
 }
 
 //==============================================================================
@@ -243,12 +244,19 @@ void ToggleSwitch::setTexts (const juce::String& u, const juce::String& d, const
     repaint();
 }
 
+float ToggleSwitch::topSpace() const
+{
+    const bool texts = upText.isNotEmpty() || name.isNotEmpty();
+    if (nameOnTop) return 52.0f * size;
+    return texts ? 33.0f * size : 23.0f * size;
+}
+
 void ToggleSwitch::placeAt (Pt c)
 {
     const bool texts = upText.isNotEmpty() || name.isNotEmpty();
     const float w = texts ? 76.0f : 26.0f * size + 6.0f;
-    const float top = texts ? 33.0f * size : 23.0f * size;
-    const float h = top + (name.isNotEmpty() ? 46.0f * size : (texts ? 33.0f * size : 12.0f * size));
+    const float top = topSpace();
+    const float h = top + (nameOnTop ? 36.0f * size : (name.isNotEmpty() ? 46.0f * size : (texts ? 33.0f * size : 12.0f * size)));
     setBounds (Rc (c.x - w * 0.5f, c.y - top, w, h).getSmallestIntegerContainer());
 }
 
@@ -278,12 +286,18 @@ void ToggleSwitch::mouseDown (const juce::MouseEvent&)
 
 void ToggleSwitch::paint (juce::Graphics& g)
 {
-    const bool texts = upText.isNotEmpty() || name.isNotEmpty();
-    const Pt c ((float) getWidth() * 0.5f, texts ? 33.0f * size : 23.0f * size);
+    const Pt c ((float) getWidth() * 0.5f, topSpace());
     mil::toggle (g, c, up, size);
-    if (upText.isNotEmpty()) mil::stencil (g, upText, c.x, c.y - 27.0f * size, 7.4f, juce::Justification::centred, palette::ink, up ? 1.0f : 0.75f, 0.05f);
-    if (downText.isNotEmpty()) mil::stencil (g, downText, c.x, c.y + 27.0f * size, 7.4f, juce::Justification::centred, palette::ink, up ? 0.75f : 1.0f, 0.05f);
-    if (name.isNotEmpty()) mil::stencil (g, name, c.x, c.y + 39.0f * size, nameSize, juce::Justification::centred, palette::ink, 1.0f, 0.08f);
+    if (nameOnTop)
+    {
+        mil::stencil (g, name, c.x, c.y - 44.0f * size, nameSize, juce::Justification::centred, palette::ink, 1.0f, 0.05f);
+        mil::stencil (g, upText, c.x, c.y - 29.0f * size, 9.0f, juce::Justification::centred, palette::ink, up ? 1.0f : 0.5f, 0.04f);
+        mil::stencil (g, downText, c.x, c.y + 29.0f * size, 9.0f, juce::Justification::centred, palette::ink, up ? 0.5f : 1.0f, 0.04f);
+        return;
+    }
+    if (upText.isNotEmpty()) mil::stencil (g, upText, c.x, c.y - 27.0f * size, 7.4f, juce::Justification::centred, palette::ink, up ? 1.0f : 0.65f, 0.04f);
+    if (downText.isNotEmpty()) mil::stencil (g, downText, c.x, c.y + 27.0f * size, 7.4f, juce::Justification::centred, palette::ink, up ? 0.65f : 1.0f, 0.04f);
+    if (name.isNotEmpty()) mil::stencil (g, name, c.x, c.y + 39.0f * size, nameSize, juce::Justification::centred, palette::ink, 1.0f, 0.05f);
 }
 
 //==============================================================================
@@ -299,7 +313,7 @@ void PushButton::placeAt (Pt c)
         setBounds (Rc (c.x - half, c.y - half, 2 * half + tw, 2 * half).getSmallestIntegerContainer());
     }
     else
-        setBounds (Rc (c.x - std::max (half, 30.0f), c.y - half, 2 * std::max (half, 30.0f), 2 * half + (text.isEmpty() ? 0.0f : 14.0f)).getSmallestIntegerContainer());
+        setBounds (Rc (c.x - std::max (half, 30.0f), c.y - half, 2 * std::max (half, 30.0f), 2 * half + (text.isEmpty() ? 0.0f : labelGap + 4.0f)).getSmallestIntegerContainer());
 }
 
 void PushButton::paintButton (juce::Graphics& g, bool, bool down)
@@ -307,8 +321,19 @@ void PushButton::paintButton (juce::Graphics& g, bool, bool down)
     const Pt c = right ? Pt (r + 6.0f, (float) getHeight() * 0.5f) : Pt ((float) getWidth() * 0.5f, r + 6.0f);
     mil::pushButton (g, c, r, cap, down);
     if (text.isEmpty()) return;
-    if (right) mil::stencil (g, text, c.x + r + 8.0f, c.y, 7.8f, juce::Justification::left, palette::ink, 1.0f, 0.06f);
-    else mil::stencil (g, text, c.x, c.y + r + 11.0f, 7.6f, juce::Justification::centred, palette::ink, 1.0f, 0.06f);
+    if (right) { mil::stencil (g, text, c.x + r + 8.0f, c.y, 8.0f, juce::Justification::left, palette::ink, 1.0f, 0.04f); return; }
+    const float ly = c.y + r + labelGap;
+    mil::stencil (g, text, c.x + (float) arrow * 4.0f, ly, labelSize, juce::Justification::centred, palette::ink, 1.0f, 0.04f);
+    if (arrow != 0)
+    {
+        const float tw = juce::GlyphArrangement::getStringWidth (stencilFont (labelSize).withExtraKerningFactor (0.04f), text);
+        const float ax = arrow < 0 ? c.x - 4.0f - tw * 0.5f - 6.0f : c.x + 4.0f + tw * 0.5f + 6.0f;
+        juce::Path t;
+        if (arrow < 0) t.addTriangle (ax - 3.0f, ly, ax + 2.0f, ly - 3.5f, ax + 2.0f, ly + 3.5f);
+        else t.addTriangle (ax + 3.0f, ly, ax - 2.0f, ly - 3.5f, ax - 2.0f, ly + 3.5f);
+        g.setColour (palette::ink);
+        g.fillPath (t);
+    }
 }
 
 //==============================================================================
@@ -330,14 +355,14 @@ void TagButton::paintButton (juce::Graphics& g, bool over, bool down)
 void Lamp::placeAt (Pt c)
 {
     const float half = r * 3.2f;
-    setBounds (Rc (c.x - half, c.y - half, 2 * half, 2 * half + (text.isEmpty() ? 0.0f : 8.0f)).getSmallestIntegerContainer());
+    setBounds (Rc (c.x - std::max (half, 30.0f), c.y - half, 2 * std::max (half, 30.0f), 2 * half + (text.isEmpty() ? 0.0f : std::max (0.0f, labelGap + r + 6.0f - half))).getSmallestIntegerContainer());
 }
 
 void Lamp::paint (juce::Graphics& g)
 {
     const Pt c ((float) getWidth() * 0.5f, r * 3.2f);
     mil::jewel (g, c, r, col, lit);
-    if (text.isNotEmpty()) mil::stencil (g, text, c.x, c.y + r + 9.0f, 7.4f, juce::Justification::centred);
+    if (text.isNotEmpty()) mil::stencil (g, text, c.x, c.y + r + labelGap, 9.0f, juce::Justification::centred, palette::ink, 1.0f, 0.04f);
 }
 
 //==============================================================================
@@ -362,5 +387,89 @@ void VuMeter::tick()
 void VuMeter::paint (juce::Graphics& g)
 {
     mil::vuMeter (g, area.translated ((float) -getX(), (float) -getY()), needle, name);
+}
+//==============================================================================
+void IconButton::paintButton (juce::Graphics& g, bool over, bool down)
+{
+    const auto b = getLocalBounds().toFloat();
+    const Pt c = b.getCentre();
+    auto col = palette::ink.withAlpha (over ? 1.0f : 0.86f);
+    if (lit) col = palette::amber;
+    if (down) col = col.darker (0.3f);
+    if (lit)
+    {
+        g.setGradientFill (juce::ColourGradient (palette::amber.withAlpha (0.35f), c.x, c.y, palette::amber.withAlpha (0.0f), c.x + 14.0f, c.y, true));
+        g.fillEllipse (Rc (28.0f, 28.0f).withCentre (c));
+    }
+    g.setColour (col);
+    juce::Path p;
+    const juce::PathStrokeType st (1.7f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded);
+    switch (kind)
+    {
+        case Kind::save:
+        {
+            const Rc r = Rc (15.0f, 15.0f).withCentre (c);
+            p.addRoundedRectangle (r, 1.8f);
+            g.fillPath (p);
+            g.setColour (palette::header);
+            g.fillRect (Rc (r.getX() + 3.5f, r.getY(), 8.0f, 5.0f));
+            g.fillRoundedRectangle (Rc (r.getX() + 3.0f, r.getY() + 8.5f, 9.0f, 5.0f), 0.8f);
+            g.setColour (col);
+            g.fillRect (Rc (r.getX() + 8.5f, r.getY() + 0.8f, 2.0f, 3.4f));
+            break;
+        }
+        case Kind::init:
+        {
+            g.fillRoundedRectangle (Rc (c.x - 7.0f, c.y - 7.5f, 14.0f, 2.2f), 1.0f);
+            g.fillRoundedRectangle (Rc (c.x - 2.5f, c.y - 9.5f, 5.0f, 2.5f), 1.0f);
+            p.startNewSubPath (c.x - 5.5f, c.y - 4.0f);
+            p.lineTo (c.x - 4.6f, c.y + 8.0f);
+            p.lineTo (c.x + 4.6f, c.y + 8.0f);
+            p.lineTo (c.x + 5.5f, c.y - 4.0f);
+            p.closeSubPath();
+            g.fillPath (p);
+            g.setColour (palette::header);
+            for (float dx : { -2.2f, 0.0f, 2.2f }) g.fillRect (Rc (c.x + dx - 0.6f, c.y - 2.0f, 1.2f, 8.0f));
+            break;
+        }
+        case Kind::dice:
+        {
+            const Rc r = Rc (15.0f, 15.0f).withCentre (c);
+            g.fillRoundedRectangle (r, 3.0f);
+            g.setColour (palette::header);
+            for (auto [dx, dy] : { std::pair { -3.6f, -3.6f }, std::pair { 3.6f, -3.6f }, std::pair { 0.0f, 0.0f }, std::pair { -3.6f, 3.6f }, std::pair { 3.6f, 3.6f } })
+                g.fillEllipse (Rc (2.8f, 2.8f).withCentre (c.translated (dx, dy)));
+            break;
+        }
+        case Kind::bell:
+        {
+            p.startNewSubPath (c.x - 7.0f, c.y + 5.0f);
+            p.quadraticTo (c.x - 5.0f, c.y + 3.0f, c.x - 5.0f, c.y - 1.0f);
+            p.quadraticTo (c.x - 5.0f, c.y - 7.0f, c.x, c.y - 7.5f);
+            p.quadraticTo (c.x + 5.0f, c.y - 7.0f, c.x + 5.0f, c.y - 1.0f);
+            p.quadraticTo (c.x + 5.0f, c.y + 3.0f, c.x + 7.0f, c.y + 5.0f);
+            p.closeSubPath();
+            g.fillPath (p);
+            g.fillEllipse (Rc (4.5f, 4.0f).withCentre (c.translated (0.0f, 7.0f)));
+            g.fillEllipse (Rc (2.6f, 2.6f).withCentre (c.translated (0.0f, -8.5f)));
+            break;
+        }
+        case Kind::menu:
+            for (float dy : { -6.0f, 0.0f, 6.0f }) g.fillRoundedRectangle (Rc (c.x - 9.0f, c.y + dy - 1.0f, 18.0f, 2.0f), 1.0f);
+            break;
+        case Kind::power:
+            p.addCentredArc (c.x, c.y + 0.5f, 7.5f, 7.5f, 0.0f, juce::degreesToRadians (35.0f), juce::degreesToRadians (325.0f), true);
+            g.strokePath (p, st);
+            g.drawLine (c.x, c.y - 9.0f, c.x, c.y - 1.0f, 1.8f);
+            break;
+        case Kind::up:
+        case Kind::down:
+        {
+            const float d = kind == Kind::up ? -1.0f : 1.0f;
+            p.addTriangle (c.x - 4.5f, c.y - d * 2.5f, c.x + 4.5f, c.y - d * 2.5f, c.x, c.y + d * 2.5f);
+            g.fillPath (p);
+            break;
+        }
+    }
 }
 } // namespace hv::ui

@@ -88,7 +88,7 @@ private:
     std::vector<std::unique_ptr<ToggleSwitch>> switches;
     std::unique_ptr<ParamKnob> mixKnob, outKnob;
     std::unique_ptr<ToggleSwitch> power;
-    PushButton captureButton { palette::red, 8.0f, "CAPTURE", true };
+    PushButton captureButton { palette::red, 8.0f, "CAPTURE" };
     TagButton backButton;
     std::array<TagButton, 6> sendButtons;
     std::array<int, 6> sendTypes {};

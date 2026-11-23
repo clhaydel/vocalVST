@@ -74,36 +74,46 @@ float hash01 (uint32_t x) { return (float) (hash (x) & 0xffffff) / (float) 0xfff
 float clamp01 (float x) { return x < 0.0f ? 0.0f : (x > 1.0f ? 1.0f : x); }
 juce::Colour C (float r, float g, float b, float a = 1.0f) { return juce::Colour::fromFloatRGBA (r, g, b, a); }
 
-const Rc kPlates[] = { masterPlate, chainPlate, detailPlate };
+Rc centred (Pt c, float w, float h) { return { c.x - w * 0.5f, c.y - h * 0.5f, w, h }; }
+
+/** Black label tag centred on c (scope captions). */
+void captionTag (juce::Graphics& g, Pt c, const juce::String& s)
+{
+    auto f = stencilFont (9.0f).withExtraKerningFactor (0.06f);
+    const auto r = centred (c, juce::GlyphArrangement::getStringWidth (f, s) + 26.0f, 17.0f);
+    mil::softShadow (g, r, 2.0f, 3, 0.10f, 0.8f, 1.2f);
+    g.setGradientFill (juce::ColourGradient (C (0.12f, 0.13f, 0.15f), 0, r.getY(), C (0.04f, 0.045f, 0.055f), 0, r.getBottom(), false));
+    g.fillRoundedRectangle (r, 2.5f);
+    g.setColour (C (1, 1, 1, 0.16f));
+    g.drawRoundedRectangle (r.reduced (0.5f), 2.5f, 0.7f);
+    g.setFont (f);
+    g.setColour (palette::tagText);
+    g.drawText (s, r, juce::Justification::centred, false);
+}
 } // namespace
 
 //==============================================================================
 std::vector<PanelArt::ScrewSpot> PanelArt::screws (uint8_t occupied)
 {
     std::vector<ScrewSpot> s;
-    auto add = [&s] (Pt c, float r, bool canRust)
+    auto add = [&s] (Pt c, float r)
     {
         const auto i = (uint32_t) s.size() + 17u;
-        s.push_back ({ c, r, hash01 (i * 31u) * juce::MathConstants<float>::pi, canRust && hash01 (i * 7u + 3u) < 0.55f });
+        s.push_back ({ c, r, hash01 (i * 31u) * juce::MathConstants<float>::pi, false });
     };
-    const auto& p = panel;
-    for (auto c : { Pt (p.getX() + 12, p.getY() + 12), Pt (p.getRight() - 12, p.getY() + 12), Pt (p.getX() + 12, p.getBottom() - 12),
-                    Pt (p.getRight() - 12, p.getBottom() - 12), Pt (p.getCentreX(), p.getBottom() - 10), Pt (p.getX() + 12, p.getCentreY()),
-                    Pt (p.getRight() - 12, p.getCentreY()) })
-        add (c, 5.0f, true);
-    for (auto& r : kPlates)
-        for (auto c : { r.getTopLeft().translated (8, 8), r.getTopRight().translated (-8, 8), r.getBottomLeft().translated (8, -8), r.getBottomRight().translated (-8, -8) })
-            add (c, 3.4f, true);
+    for (auto& r : plates)
+        for (auto c : { r.getTopLeft().translated (9, 9), r.getTopRight().translated (-9, 9), r.getBottomLeft().translated (9, -9), r.getBottomRight().translated (-9, -9) })
+            add (c, 4.8f);
     for (int i = 0; i < 8; ++i)
         if ((occupied & (1u << i)) == 0)
         {
-            const auto b = bay (i);
-            for (auto c : { Pt (b.getX() + 15, b.getY() + 16), Pt (b.getRight() - 15, b.getY() + 16), Pt (b.getX() + 15, b.getBottom() - 18),
-                            Pt (b.getRight() - 15, b.getBottom() - 18) })
-                add (c, 3.4f, true);
+            const auto b = blankPlate (bay (i));
+            for (auto c : { b.getTopLeft().translated (11, 11), b.getTopRight().translated (-11, 11), b.getBottomLeft().translated (11, -11), b.getBottomRight().translated (-11, -11) })
+                add (c, 4.4f);
         }
-    add ({ programWin.getX() - 14.0f, programWin.getCentreY() }, 3.6f, false);
-    add ({ programWin.getRight() + 14.0f, programWin.getCentreY() }, 3.6f, false);
+    const auto& d = dataPlate;
+    for (auto c : { d.getTopLeft().translated (10, 9), d.getTopRight().translated (-10, 9), d.getBottomLeft().translated (10, -15), d.getBottomRight().translated (-10, -15) })
+        add (c, 3.8f);
     return s;
 }
 
@@ -112,7 +122,7 @@ void PanelArt::finish (juce::Image& img, float k, uint8_t occupied, const std::v
 {
     const auto& T = Textures::get();
     const int w = img.getWidth(), h = img.getHeight();
-    const int x0 = std::max (0, (int) (panel.getX() * k)), y0 = std::max (0, (int) (panel.getY() * k));
+    const int x0 = 0, y0 = std::max (0, (int) std::ceil (panel.getY() * k));
     const int x1 = std::min (w, (int) std::ceil (panel.getRight() * k)), y1 = std::min (h, (int) std::ceil (panel.getBottom() * k));
     const float inv = 1.0f / k;
     // masks stored as bytes (0..255) to keep memory low at high pixel scales
@@ -148,9 +158,9 @@ void PanelArt::finish (juce::Image& img, float k, uint8_t occupied, const std::v
             }
         }
     };
-    edgeBand (panel, 1.0f, 9.0f);
-    for (auto& r : kPlates) edgeBand (r, 0.8f, 5.0f);
-    for (int i = 0; i < 8; ++i) if (occupied & (1u << i)) edgeBand (moduleFace (bay (i)), 0.9f, 3.5f);
+    for (auto& r : plates) edgeBand (r, 0.9f, 5.0f);
+    for (int i = 0; i < 8; ++i) edgeBand (moduleFace (bay (i)), 0.8f, 3.5f);
+    juce::ignoreUnused (occupied);
 
     // ---- hand wear: rings round the big, much-used knobs
     for (auto& ring : wornKnobs())
@@ -221,30 +231,30 @@ void PanelArt::finish (juce::Image& img, float k, uint8_t occupied, const std::v
             float mult = 1.0f + (shade - 1.0f) * 0.45f;
             // 2-3. weathering streaks, dirt specks
             const float st = T.streaks.sample1 (lx, ly, 600.0f), sp = T.specks.sample1 (lx, ly, 467.0f);
-            mult *= 1.0f - 0.32f * clamp01 ((st - 0.15f) * 1.6f) - 0.22f * sp;
+            mult *= 1.0f - 0.24f * clamp01 ((st - 0.15f) * 1.6f) - 0.20f * sp;
             // uneven light; dust settles toward the bottom
             mult *= (1.08f - 0.18f * (colLin[(size_t) px] + rowLin) + 0.06f * colHot[(size_t) px] * rowHot) * rowDust;
             r *= mult; g *= mult; b *= mult;
 
             const size_t i = idx (px, py);
             const float handW = (float) hands[i] * (1.0f / 255.0f);
-            const float wr = clamp01 ((float) wear[i] * (1.0f / 255.0f) + handW);
+            const float wr = clamp01 ((float) wear[i] * (1.0f / 255.0f) + 0.35f * handW);
             // 4. chips through to bare metal, with darker rims
             const float ch = T.chips.sample1 (lx, ly, 373.0f), cb = T.chipsBlur.sample1 (lx, ly, 373.0f);
             const float f = 0.35f + 1.4f * wr;
-            const float chip = clamp01 ((ch * f - 0.42f) * 3.0f);
-            const float rim = clamp01 (clamp01 ((cb * f - 0.42f) * 3.0f) - chip);
+            const float chip = clamp01 ((ch * f - 0.50f) * 3.0f);
+            const float rim = clamp01 (clamp01 ((cb * f - 0.50f) * 3.0f) - chip);
             const float bareK = 0.85f + 0.25f * ch;
-            r = r * (1 - chip) + 0.66f * bareK * chip;
-            g = g * (1 - chip) + 0.65f * bareK * chip;
-            b = b * (1 - chip) + 0.61f * bareK * chip;
+            r = r * (1 - chip) + 0.60f * bareK * chip;
+            g = g * (1 - chip) + 0.62f * bareK * chip;
+            b = b * (1 - chip) + 0.65f * bareK * chip;
             const float rimK = 1.0f - 0.55f * rim;
             r *= rimK; g *= rimK; b *= rimK;
             // 5. hairline scratches
-            const float sc = 0.30f * clamp01 (T.scratches.sample1 (lx, ly, 533.0f) * 1.4f);
-            r += (0.66f - r) * sc; g += (0.65f - g) * sc; b += (0.61f - b) * sc;
-            // keep the enamel khaki (not the bare chips)
-            const float lum = 0.299f * r + 0.587f * g + 0.114f * b, sat = 1.0f + 0.28f * (1.0f - chip);
+            const float sc = 0.26f * clamp01 (T.scratches.sample1 (lx, ly, 533.0f) * 1.4f);
+            r += (0.62f - r) * sc; g += (0.65f - g) * sc; b += (0.69f - b) * sc;
+            // keep the enamel's blue (not the bare chips)
+            const float lum = 0.299f * r + 0.587f * g + 0.114f * b, sat = 1.0f + 0.15f * (1.0f - chip);
             r = lum + (r - lum) * sat; g = lum + (g - lum) * sat; b = lum + (b - lum) * sat;
             // 6. fingerprint smudges round the worn knobs
             if (handW > 0.01f)
@@ -284,104 +294,184 @@ void PanelArt::finish (juce::Image& img, float k, uint8_t occupied, const std::v
 void PanelArt::drawCrisp (juce::Graphics& g, uint8_t occupied, const std::vector<ScrewSpot>& spots)
 {
     using namespace mil;
-    // carry handles on the case sides
-    for (float hx : { 7.0f, kW - 7.0f })
-        for (auto [ya, yb] : { std::pair { 150.0f, 320.0f }, std::pair { 440.0f, 610.0f } })
-        {
-            g.setColour (C (0, 0, 0, 0.4f));
-            g.fillRoundedRectangle (hx - 2.0f, ya + 3.0f, 7.0f, yb - ya, 3.0f);
-            g.setGradientFill (juce::ColourGradient (C (0.45f, 0.45f, 0.42f), hx - 3.5f, 0, C (0.30f, 0.30f, 0.28f), hx + 3.5f, 0, false));
-            g.fillRoundedRectangle (hx - 3.0f, ya, 6.0f, yb - ya, 3.0f);
-            g.setColour (C (0.95f, 0.95f, 0.9f, 0.85f));
-            g.fillRect (hx - 1.4f, ya + 2.0f, 1.2f, yb - ya - 4.0f);
-            for (float yy : { ya, yb })
-            {
-                const float bx = hx < kW * 0.5f ? hx - 4.0f : hx - 14.0f;
-                g.setGradientFill (juce::ColourGradient (C (0.8f, 0.8f, 0.75f), bx, yy - 6, C (0.3f, 0.3f, 0.27f), bx + 18, yy + 6, false));
-                g.fillRoundedRectangle (bx, yy - 6.0f, 18.0f, 12.0f, 3.0f);
-                screw (g, { hx < kW * 0.5f ? hx + 8.0f : hx - 8.0f, yy }, 2.6f, 0.9f);
-            }
-        }
-    for (auto& s : spots) screw (g, s.c, s.r, s.angle);
-    // signal-flow arrows between bays
-    g.setColour (palette::ink.withAlpha (0.8f));
-    for (int i = 0; i < 7; ++i)
-    {
-        const auto b = bay (i);
-        const float ax = b.getRight() + bayGap * 0.5f, ay = b.getCentreY();
-        juce::Path tri;
-        tri.addTriangle (ax - 2.0f, ay - 4.0f, ax + 2.5f, ay, ax - 2.0f, ay + 4.0f);
-        g.fillPath (tri);
-    }
     juce::ignoreUnused (occupied);
+    for (auto& s : spots) screw (g, s.c, s.r, s.angle);
 
-    // data plate (engraved black anodised, riveted)
+    // title bar
     {
-        const auto r = dataPlate;
-        softShadow (g, r, 3.0f, 8, 0.07f);
-        g.setColour (C (0, 0, 0, 0.5f));
-        g.fillRoundedRectangle (r.translated (2, 3), 3.0f);
-        g.setGradientFill (juce::ColourGradient (C (0.12f, 0.12f, 0.11f), 0, r.getY(), C (0.05f, 0.05f, 0.05f), 0, r.getBottom(), false));
-        g.fillRoundedRectangle (r, 3.0f);
-        for (int i = 0; i < (int) r.getHeight(); ++i)
+        g.setGradientFill (juce::ColourGradient (C (0.17f, 0.17f, 0.175f), 0, 0, C (0.11f, 0.11f, 0.115f), 0, headerH, false));
+        g.fillRect (header);
+        g.setColour (C (0, 0, 0));
+        g.fillRect (0.0f, headerH - 1.2f, kW, 1.2f);
+        g.setColour (C (1, 1, 1, 0.06f));
+        g.fillRect (0.0f, 0.0f, kW, 1.0f);
+        // flask
+        const Pt f (31.0f, 19.0f);
+        juce::Path flask;
+        flask.startNewSubPath (f.x - 3.5f, f.y - 10.0f);
+        flask.lineTo (f.x - 3.5f, f.y - 3.0f);
+        flask.lineTo (f.x - 10.0f, f.y + 8.0f);
+        flask.quadraticTo (f.x - 11.0f, f.y + 10.5f, f.x - 8.0f, f.y + 10.5f);
+        flask.lineTo (f.x + 8.0f, f.y + 10.5f);
+        flask.quadraticTo (f.x + 11.0f, f.y + 10.5f, f.x + 10.0f, f.y + 8.0f);
+        flask.lineTo (f.x + 3.5f, f.y - 3.0f);
+        flask.lineTo (f.x + 3.5f, f.y - 10.0f);
+        juce::Path liquid;
+        liquid.startNewSubPath (f.x - 6.5f, f.y + 2.5f);
+        liquid.lineTo (f.x + 6.5f, f.y + 2.5f);
+        liquid.lineTo (f.x + 9.0f, f.y + 7.5f);
+        liquid.quadraticTo (f.x + 9.5f, f.y + 9.0f, f.x + 7.5f, f.y + 9.0f);
+        liquid.lineTo (f.x - 7.5f, f.y + 9.0f);
+        liquid.quadraticTo (f.x - 9.5f, f.y + 9.0f, f.x - 9.0f, f.y + 7.5f);
+        liquid.closeSubPath();
+        g.setColour (palette::ink.withAlpha (0.85f));
+        g.fillPath (liquid);
+        g.setColour (palette::ink);
+        g.strokePath (flask, juce::PathStrokeType (1.6f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+        g.drawLine (f.x - 5.5f, f.y - 10.0f, f.x + 5.5f, f.y - 10.0f, 1.6f);
+        for (auto [dx, dy] : { std::pair { -2.0f, 5.5f }, std::pair { 2.5f, 6.5f } })
         {
-            g.setColour (C (1, 1, 1, 0.018f + 0.015f * hash01 ((uint32_t) i * 977u)));
-            g.fillRect (r.getX(), r.getY() + (float) i, r.getWidth(), 0.5f);
+            g.setColour (C (0.13f, 0.13f, 0.14f));
+            g.fillEllipse (f.x + dx - 1.1f, f.y + dy - 1.1f, 2.2f, 2.2f);
         }
-        g.setColour (C (0.75f, 0.73f, 0.66f, 0.8f));
-        g.drawRoundedRectangle (r.reduced (4.0f), 2.0f, 0.8f);
-        for (auto c : { r.getTopLeft().translated (9, 9), r.getTopRight().translated (-9, 9), r.getBottomLeft().translated (9, -9), r.getBottomRight().translated (-9, -9) })
-        {
-            g.setGradientFill (juce::ColourGradient (C (0.95f, 0.95f, 0.9f), c.x - 1, c.y - 1, C (0.35f, 0.35f, 0.32f), c.x + 2.5f, c.y + 2.5f, true));
-            g.fillEllipse (c.x - 3.0f, c.y - 3.0f, 6.0f, 6.0f);
-        }
-        stencil (g, "VOCAL DESTRUCTION SET  No. 13", r.getCentreX(), r.getY() + 18.0f, 8.6f, juce::Justification::centred, palette::silver, 1.0f, 0.1f);
-        const float cap = 22.0f, tw = BlockFont::width ("HARSH VOX", cap);
-        float x = r.getCentreX() - tw * 0.5f;
-        x += BlockFont::draw (g, "HARSH", x, r.getY() + 30.0f, cap, palette::red);
-        BlockFont::draw (g, "VOX", x + cap * 6.0f / 7.0f, r.getY() + 30.0f, cap, palette::silver);
-        g.setFont (tagFont (7.6f));
-        g.setColour (palette::silver);
-        g.drawText ("STATIC RUIN    MK II    SERIAL No " HV_VERSION_STRING, Rc (r.getX(), r.getY() + 66.0f, r.getWidth(), 12.0f), juce::Justification::centred, false);
+        g.setFont (stencilFont (20.0f).withExtraKerningFactor (0.02f));
+        g.setColour (palette::ink);
+        g.drawText ("HARSH VOX", Rc (60.0f, 4.0f, 200.0f, 30.0f), juce::Justification::centredLeft, false);
     }
 
-    // maker's mark
+    // maker's mark (top-left plate)
     {
-        const float lw = staticRuinLogoWidth (logoCap);
-        const float lx = CR - 8.0f - lw;
-        drawStaticRuinLogo (g, lx, logoY, logoCap, false);
-        stencil (g, "SIGNAL CORPS PATTERN  -  HV-13", lx + lw * 0.5f + 20.0f, 72.0f, 7.4f, juce::Justification::centred, palette::ink, 0.85f, 0.12f);
-        stencil (g, "POWER", powerLamp.x + 13.0f, powerLamp.y, 7.2f, juce::Justification::left, palette::ink, 1.0f, 0.06f);
-        stencil (g, "LIMIT", limitLamp.x + 13.0f, limitLamp.y, 7.2f, juce::Justification::left, palette::ink, 1.0f, 0.06f);
+        const float cap = 14.0f, lw = staticRuinLogoWidth (cap);
+        drawStaticRuinLogo (g, topLeftPlate.getCentreX() - lw * 0.5f, 74.0f - cap * 0.5f - 4.0f, cap, false);
+        stencil (g, "SIGNAL CORPS PATTERN  -  HV-13", topLeftPlate.getCentreX(), 101.0f, 7.4f, juce::Justification::centred, palette::ink, 0.8f, 0.08f);
     }
 
-    // program window bezel
+    // program LCD bezel
     {
         const auto w = programWin;
-        stencil (g, "PROGRAM", w.getCentreX(), w.getY() - 17.0f, 8.8f, juce::Justification::centred, palette::ink, 1.0f, 0.2f);
-        g.setColour (C (0, 0, 0, 0.5f));
-        g.fillRoundedRectangle (w.expanded (6.0f).translated (2.0f, 3.0f), 6.0f);
-        g.setGradientFill (juce::ColourGradient (C (0.86f, 0.85f, 0.80f), w.getX(), w.getY(), C (0.30f, 0.30f, 0.27f), w.getRight(), w.getBottom(), false));
-        g.fillRoundedRectangle (w.expanded (6.0f), 6.0f);
-        g.setColour (C (0.05f, 0.05f, 0.04f));
-        g.fillRoundedRectangle (w.expanded (1.0f), 3.5f);
+        softShadow (g, w, 6.0f, 6, 0.10f, 1.5f, 2.5f);
+        g.setColour (C (0, 0, 0, 0.6f));
+        g.fillRoundedRectangle (w.expanded (1.0f), 7.0f);
+        g.setGradientFill (juce::ColourGradient (C (0.22f, 0.24f, 0.28f), 0, w.getY(), C (0.07f, 0.08f, 0.10f), 0, w.getBottom(), false));
+        g.fillRoundedRectangle (w, 6.0f);
+        g.setColour (C (0.85f, 0.9f, 1.0f, 0.22f));
+        g.drawRoundedRectangle (w.reduced (0.7f), 5.5f, 1.0f);
+        g.setColour (C (0.0f, 0.0f, 0.0f, 0.9f));
+        g.fillRoundedRectangle (w.reduced (9.0f, 8.0f), 3.5f);
     }
 
-    sectionTag (g, masterPlate.getX(), masterPlate.getY(), "MASTER CONTROL");
-    sectionTag (g, chainPlate.getX(), chainPlate.getY(), "SIGNAL CHAIN  -  MODULE BAYS 01-08");
-
     // latency counter frame + version
-    stencil (g, "LATENCY", latencyBox.getCentreX(), latencyBox.getY() - 10.0f, 7.8f, juce::Justification::centred, palette::ink, 1.0f, 0.1f);
-    g.setColour (C (0.05f, 0.05f, 0.05f));
-    g.fillRoundedRectangle (latencyBox, 2.0f);
-    stencil (g, "ms", latencyBox.getRight() + 4.0f, latencyBox.getCentreY(), 7.8f, juce::Justification::left);
-    tag (g, { latencyBox.getCentreX(), latencyBox.getBottom() + 18.0f }, "v" HV_VERSION_STRING, 7.4f);
+    stencil (g, "LATENCY", latencyBox.getCentreX(), latencyBox.getY() - 21.0f, 9.0f, juce::Justification::centred, palette::ink, 1.0f, 0.06f);
+    g.setColour (C (0, 0, 0, 0.55f));
+    g.fillRoundedRectangle (latencyBox.expanded (2.0f).translated (0.6f, 1.0f), 3.0f);
+    g.setColour (C (0.04f, 0.045f, 0.05f));
+    g.fillRoundedRectangle (latencyBox, 2.5f);
+    stencil (g, "ms", latencyBox.getRight() + 10.0f, latencyBox.getCentreY(), 9.0f, juce::Justification::left);
+    tag (g, { latencyBox.getCentreX(), latencyBox.getBottom() + 23.0f }, "v" HV_VERSION_STRING, 8.0f);
 
     // scopes
     crtBezel (g, scopeL);
     crtBezel (g, scopeR);
-    stencil (g, "ENVELOPE  /  PITCH", scopeL.getCentreX(), scopeL.getBottom() + 10.0f, 8.2f, juce::Justification::centred, palette::ink, 1.0f, 0.12f);
-    stencil (g, "TRACT  (LPC)", scopeR.getCentreX(), scopeR.getBottom() + 10.0f, 8.2f, juce::Justification::centred, palette::ink, 1.0f, 0.12f);
+    captionTag (g, { scopeL.getCentreX(), scopeL.getBottom() + 12.0f }, "ENVELOPE  /  PITCH");
+    captionTag (g, { scopeR.getCentreX(), scopeR.getBottom() + 12.0f }, "TRACT  (LPC)");
+}
+
+//==============================================================================
+void PanelArt::steelPlate (juce::Image& img, float k)
+{
+    const auto r = dataPlate;
+    {
+        juce::Graphics g (img);
+        g.addTransform (juce::AffineTransform::scale (k));
+        mil::softShadow (g, r, 4.0f, 8, 0.10f, 2.0f, 3.0f);
+        g.setColour (C (0.02f, 0.025f, 0.03f));
+        g.fillRoundedRectangle (r.expanded (2.5f), 5.5f);
+        g.setGradientFill (juce::ColourGradient (C (0.80f, 0.81f, 0.82f), r.getX(), r.getY(), C (0.60f, 0.61f, 0.62f), r.getRight(), r.getBottom(), false));
+        g.fillRoundedRectangle (r, 3.5f);
+    }
+    // brushed grain, grime and scratches
+    const auto& T = Textures::get();
+    const float inv = 1.0f / k;
+    const int x0 = (int) (r.getX() * k), y0 = (int) (r.getY() * k), x1 = (int) (r.getRight() * k), y1 = (int) (r.getBottom() * k);
+    juce::Image::BitmapData bd (img, x0, y0, x1 - x0, y1 - y0, juce::Image::BitmapData::readWrite);
+    for (int py = y0; py < y1; ++py)
+        for (int px = x0; px < x1; ++px)
+        {
+            auto* pix = reinterpret_cast<juce::PixelARGB*> (bd.getPixelPointer (px - x0, py - y0));
+            const float lx = ((float) px + 0.5f) * inv, ly = ((float) py + 0.5f) * inv;
+            if (pix->getAlpha() < 255) continue;
+            float cr = pix->getRed() / 255.0f, cg = pix->getGreen() / 255.0f, cb = pix->getBlue() / 255.0f;
+            const float brush = T.specks.sample1 (lx * 0.06f, ly * 3.0f, 467.0f) + 0.5f * T.streaks.sample1 (lx * 0.1f, ly * 2.0f, 600.0f);
+            float m = 0.90f + 0.12f * brush;
+            m *= 1.0f - 0.35f * clamp01 ((T.streaks.sample1 (lx + 200.0f, ly, 300.0f) - 0.2f) * 1.5f) - 0.30f * T.specks.sample1 (lx, ly, 250.0f);
+            const float grime = clamp01 ((T.chipsBlur.sample1 (lx + 90.0f, ly + 40.0f, 260.0f) - 0.5f) * 2.0f);
+            m *= 1.0f - 0.22f * grime;
+            cr *= m; cg *= m; cb *= m;
+            const float sc = 0.35f * clamp01 (T.scratches.sample1 (lx, ly, 300.0f) * 1.5f);
+            cr += (0.95f - cr) * sc; cg += (0.95f - cg) * sc; cb += (0.96f - cb) * sc;
+            pix->setARGB (255, (juce::uint8) (clamp01 (cr) * 255.0f), (juce::uint8) (clamp01 (cg) * 255.0f), (juce::uint8) (clamp01 (cb) * 255.0f));
+        }
+}
+
+void PanelArt::plateTitle (juce::Image& img, float k)
+{
+    const auto r = dataPlate;
+    const int ox = (int) std::floor (r.getX() * k), oy = (int) std::floor (r.getY() * k);
+    juce::Image layer (juce::Image::ARGB, (int) std::ceil (r.getWidth() * k) + 2, (int) std::ceil (r.getHeight() * k) + 2, true, juce::SoftwareImageType());
+    const auto ink = C (0.10f, 0.105f, 0.11f), red = C (0.74f, 0.12f, 0.11f);
+    {
+        juce::Graphics g (layer);
+        g.addTransform (juce::AffineTransform::translation (r.getX() - (float) ox / k, r.getY() - (float) oy / k).scaled (k));
+        const float cx = r.getWidth() * 0.5f;
+        auto line = [&g] (const juce::String& s, float x, float y, float size, juce::Colour c)
+        {
+            auto f = stencilFont (size).withExtraKerningFactor (0.04f);
+            g.setFont (f);
+            g.setColour (c);
+            g.drawText (s, Rc (x - 200.0f, y - size, 400.0f, size * 2.0f), juce::Justification::centred, false);
+        };
+        line ("VOCAL DESTRUCTION SET  No. 13", cx, 12.0f, 10.0f, ink);
+        line (juce::String ("STATIC RUIN  ") + juce::String::fromUTF8 ("\xe2\x80\xa2") + "  MK II  " + juce::String::fromUTF8 ("\xe2\x80\xa2")
+                  + "  SERIAL No. " HV_VERSION_STRING, cx, 73.0f, 9.4f, ink);
+        auto word = [&g] (const juce::String& s, Rc box, juce::Colour c)
+        {
+            juce::GlyphArrangement ga;
+            ga.addLineOfText (condensedFont (60.0f), s, 0.0f, 0.0f);
+            juce::Path p;
+            ga.createPath (p);
+            p.applyTransform (p.getTransformToScaleToFit (box, false));
+            g.setColour (c);
+            g.fillPath (p);
+        };
+        word ("HARSH", { 67.0f, 23.5f, 123.0f, 33.0f }, red);
+        word ("VOX", { 211.0f, 23.5f, 72.0f, 33.0f }, ink);
+        // little flow arrow under the title
+        g.setColour (ink);
+        g.drawLine (109.0f, 63.5f, 141.0f, 63.5f, 1.4f);
+        juce::Path head;
+        head.addTriangle (146.0f, 63.5f, 139.0f, 60.3f, 139.0f, 66.7f);
+        g.fillPath (head);
+    }
+    // wear the print: worn through where the plate is chipped and rubbed
+    const auto& T = Textures::get();
+    const float inv = 1.0f / k;
+    juce::Image::BitmapData bd (layer, juce::Image::BitmapData::readWrite);
+    for (int y = 0; y < layer.getHeight(); ++y)
+        for (int x = 0; x < layer.getWidth(); ++x)
+        {
+            auto* pix = reinterpret_cast<juce::PixelARGB*> (bd.getPixelPointer (x, y));
+            if (pix->getAlpha() == 0) continue;
+            const float lx = ((float) (x + ox) + 0.5f) * inv, ly = ((float) (y + oy) + 0.5f) * inv;
+            const float wear = 1.25f * T.specks.sample1 (lx, ly, 180.0f) + 0.9f * T.chips.sample1 (lx + 37.0f, ly + 11.0f, 220.0f)
+                             + 0.6f * T.scratches.sample1 (lx, ly, 260.0f);
+            const float rel = ly - r.getY();
+            const float amount = rel > 22.0f && rel < 58.0f ? 0.92f : 0.45f;   // the big title is worn hardest
+            const float keep = 1.0f - amount * clamp01 ((wear - (amount > 0.5f ? 0.62f : 0.8f)) * 3.0f);
+            pix->multiplyAlpha (keep);
+        }
+    juce::Graphics g (img);
+    g.setOpacity (0.94f);
+    g.drawImageAt (layer, ox, oy);
 }
 
 //==============================================================================
@@ -395,16 +485,17 @@ juce::Image PanelArt::render (float k, uint8_t occupied)
         juce::Graphics g (img);
         g.addTransform (juce::AffineTransform::scale (k));
         mil::case_ (g);
-        for (auto& r : kPlates) mil::raisedPlate (g, r);
+        for (auto& r : plates) mil::raisedPlate (g, r);
         for (int i = 0; i < 8; ++i)
         {
             const auto b = bay (i);
-            mil::recess (g, b);
             if (occupied & (1u << i)) mil::moduleBody (g, moduleFace (b));
             else mil::blankingPlate (g, blankPlate (b));
         }
     }
     finish (img, k, occupied, spots);
+    steelPlate (img, k);
+    plateTitle (img, k);
     {
         juce::Graphics g (img);
         g.addTransform (juce::AffineTransform::scale (k));

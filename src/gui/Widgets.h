@@ -52,6 +52,9 @@ private:
     };
     void configureSteps();
     juce::Point<float> centre() const;
+    float topSpace() const;
+    float labelOffset() const;
+    float tagOffset() const;
     HarshVoxProcessor& proc;
     int index, slot, liveIdx;
     KnobLook look;
@@ -79,8 +82,10 @@ public:
     void mouseDown (const juce::MouseEvent&) override;
     std::function<void (bool)> onChange;
     float nameSize = 7.8f;
+    bool nameOnTop = false;     // name above the up / down legends (master switches)
 
 private:
+    float topSpace() const;
     HarshVoxProcessor* proc = nullptr;
     int index = -1;
     float size;
@@ -95,6 +100,8 @@ public:
     PushButton (juce::Colour cap, float radius, const juce::String& label = {}, bool labelRight = false);
     void placeAt (juce::Point<float> centre);
     void paintButton (juce::Graphics&, bool over, bool down) override;
+    float labelGap = 11.0f, labelSize = 7.8f;
+    int arrow = 0;              // -1 / +1: small triangle before / after the label
 
 private:
     juce::Colour cap;
@@ -113,6 +120,20 @@ public:
     juce::Colour textColour = palette::tagText;
 };
 
+/** Flat white icon in the title bar. */
+class IconButton final : public juce::Button
+{
+public:
+    enum class Kind { save, init, dice, bell, menu, power, up, down };
+    explicit IconButton (Kind k) : juce::Button ({}), kind (k) {}
+    void paintButton (juce::Graphics&, bool over, bool down) override;
+    void setLit (bool l) { if (l != lit) { lit = l; repaint(); } }
+
+private:
+    Kind kind;
+    bool lit = false;
+};
+
 /** Jewel indicator lamp. */
 class Lamp final : public juce::Component
 {
@@ -121,6 +142,7 @@ public:
     void placeAt (juce::Point<float> centre);
     void setLit (bool l) { if (l != lit) { lit = l; repaint(); } }
     void paint (juce::Graphics&) override;
+    float labelGap = 9.0f;
 
 private:
     juce::Colour col;

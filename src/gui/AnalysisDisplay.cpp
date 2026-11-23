@@ -90,10 +90,10 @@ void AnalysisDisplay::paint (juce::Graphics& g)
         const auto gl = layout::glass (bezel).translated (-o.x, -o.y);
         juce::Graphics::ScopedSaveState ss (g);
         juce::Path clip;
-        clip.addRoundedRectangle (gl, 14.0f);
+        clip.addRoundedRectangle (gl, 9.0f);
         g.reduceClipRegion (clip);
-        g.setGradientFill (juce::ColourGradient (juce::Colour::fromFloatRGBA (0.05f, 0.13f, 0.07f, 1.0f), gl.getCentreX(), gl.getCentreY(),
-                                                 juce::Colour::fromFloatRGBA (0.01f, 0.03f, 0.015f, 1.0f), gl.getCentreX() + gl.getWidth() * 0.65f, gl.getCentreY(), true));
+        g.setGradientFill (juce::ColourGradient (juce::Colour::fromFloatRGBA (0.05f, 0.12f, 0.10f, 1.0f), gl.getCentreX(), gl.getCentreY(),
+                                                 juce::Colour::fromFloatRGBA (0.01f, 0.03f, 0.03f, 1.0f), gl.getCentreX() + gl.getWidth() * 0.65f, gl.getCentreY(), true));
         g.fillRect (gl);
         graticule (g, gl, 10, 6);
         if (left) paintTimeline (g, gl.reduced (6.0f, 4.0f));
@@ -231,17 +231,17 @@ void ClassifierPanel::update (const AnalysisTelemetry::Point& p)
 void ClassifierPanel::paint (juce::Graphics& g)
 {
     const float cx = (float) getWidth() * 0.5f;
-    mil::stencil (g, "CLASSIFIER", cx, 8.0f, 8.4f, juce::Justification::centred, palette::ink, 1.0f, 0.15f);
+    mil::stencil (g, "CLASSIFIER", cx, 8.0f, 9.0f, juce::Justification::centred, palette::ink, 1.0f, 0.06f);
     const struct { const char* n; juce::Colour c; bool lit; } lamps[] = { { "V", palette::green, v }, { "F", palette::amber, f }, { "P", palette::red.brighter (0.3f), pl } };
     for (int i = 0; i < 3; ++i)
     {
-        const juce::Point<float> c (cx + (float) (i - 1) * 30.0f, 36.0f);
-        mil::jewel (g, c, 6.5f, lamps[i].c, lamps[i].lit);
-        mil::stencil (g, lamps[i].n, c.x, c.y + 16.0f, 7.6f, juce::Justification::centred);
+        const juce::Point<float> c (cx + (float) (i - 1) * 36.0f, 36.0f);
+        mil::jewel (g, c, 7.5f, lamps[i].c, lamps[i].lit);
+        mil::stencil (g, lamps[i].n, c.x, c.y + 20.0f, 8.4f, juce::Justification::centred);
     }
-    g.setFont (tagFont (8.6f));
+    g.setFont (tagFont (9.0f));
     g.setColour (palette::ink);
-    g.drawText ("f0  " + f0Text.paddedLeft (' ', 4) + " Hz", juce::Rectangle<float> (0.0f, 68.0f, (float) getWidth(), 12.0f), juce::Justification::centred, false);
-    g.drawText ("CONF  " + confText, juce::Rectangle<float> (0.0f, 83.0f, (float) getWidth(), 12.0f), juce::Justification::centred, false);
+    g.drawText ("f0  " + f0Text.paddedLeft (' ', 4) + " Hz", juce::Rectangle<float> (0.0f, 79.0f, (float) getWidth(), 12.0f), juce::Justification::centred, false);
+    g.drawText ("CONF  " + confText, juce::Rectangle<float> (0.0f, 97.0f, (float) getWidth(), 12.0f), juce::Justification::centred, false);
 }
 } // namespace hv::ui

@@ -17,5 +17,7 @@ private:
     static std::vector<ScrewSpot> screws (uint8_t occupied);
     static void finish (juce::Image&, float k, uint8_t occupied, const std::vector<ScrewSpot>&);
     static void drawCrisp (juce::Graphics&, uint8_t occupied, const std::vector<ScrewSpot>&);
+    static void steelPlate (juce::Image&, float k);
+    static void plateTitle (juce::Image&, float k);
 };
 } // namespace hv::ui

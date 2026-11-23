@@ -140,26 +140,31 @@ User presets are saved as `.hvx` files under `~/.config/Static Ruin/Harsh Vox/Pr
 
 ## Interface
 
-The panel is styled as military field hardware: khaki enamel, black bakelite knobs, bat toggles, jewel
-lamps, cream VU meters, plug-in module units in recessed bays, and green-phosphor CRT scopes.
+The panel is styled as field hardware: slate-blue enamel plates screwed to a frame, cream knurled
+knobs, a black Seed dial, bat toggles, jewel lamps, cream VU meters, a steel nameplate, a backlit
+PROGRAM LCD, plug-in module units with blanking plates over empty bays, and green-phosphor CRT scopes.
+A dark title bar across the top holds the preset selector and icon buttons.
 
 - **Fixed layout, scaled as one piece.** The panel is laid out at 1220 x 760 and scales proportionally
   (fixed aspect ratio) from **900 x 561** up to 2440 x 1520.
 - **Drawn in code, plus photo textures.** All hardware is vector-drawn (`src/gui/MilDraw.cpp`). The panel
   background (`src/gui/PanelArt.cpp`) adds a paint finish using CC0 photo masks: relief, chips worn
   through to bare metal along edges and round the most-used knobs, scratches, grime streaks, fingerprints,
-  and rust round the screws. The finished background is cached at the screen's real pixel density. It is
+  and grime. The finished background is cached at the screen's real pixel density. It is
   rebuilt only when the window scale changes or a bay is filled or emptied: about 75 ms at 1x and
   0.3 s at 2x, multi-threaded.
 - **Using it.**
   - Click a vacant bay or turn the **MODULE** selector to fit a unit.
   - Drag a unit's name plate to reorder; click the name plate to change the module.
   - The **MOD VIEW** switch shows the modulation matrix in the lower section.
-  - Click the **PROGRAM** window for presets, save, load and export.
+  - Click the **PROGRAM** window, the title-bar preset field or the menu icon for presets, save, load and
+    export. PREV / NEXT (or the title-bar arrows) step through the factory presets.
+  - Title-bar icons: save a user preset, reset to Init (asks first), roll a new random Seed, the bell
+    lights while the output limiter is working, menu, and About.
 
 ## Fonts and textures
 
 Headings and logos use a procedural block font (`src/gui/BlockFont.cpp`) in the Static Ruin house style.
-Panel lettering uses IBM Plex Sans Condensed and IBM Plex Mono. Menus and dialogs use Space Grotesk and
+Panel lettering uses IBM Plex Sans, the nameplate IBM Plex Sans Condensed, and value tags IBM Plex Mono. Menus and dialogs use Space Grotesk and
 DM Mono. All are SIL OFL 1.1 (`resources/fonts/`). Panel textures are CC0 from ambientCG
 (`resources/textures/README.md`).

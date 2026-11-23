@@ -5,7 +5,7 @@
 
 namespace hv
 {
-/** Military-hardware panel: a fixed 1220 x 760 layout scaled as one piece (fixed aspect ratio). */
+/** Hardware-style panel: a fixed 1220 x 760 layout scaled as one piece (fixed aspect ratio). */
 class HarshVoxEditor final : public juce::AudioProcessorEditor, private juce::Timer
 {
 public:
@@ -23,6 +23,8 @@ private:
     void stepPreset (int delta);
     void savePreset();
     void exportPreset();
+    void confirmInit();
+    void showAbout();
 
     HarshVoxProcessor& proc;
     ui::LookAndFeel laf;

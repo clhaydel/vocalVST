@@ -37,7 +37,7 @@ juce::String moduleAbbrev (int t)
 BayUnit::BayUnit (HarshVoxProcessor& p, int s) : slot (s), proc (p), power (p, slotIndex (s, SOn), 0.55f)
 {
     power.setTexts ({}, {}, {});
-    power.placeAt ({ face().getX() + 13.0f, face().getBottom() - 17.0f });
+    power.placeAt ({ face().getX() + 13.0f, face().getBottom() - 15.0f });
     addChildComponent (power);
     rebuild();
 }
@@ -62,14 +62,14 @@ void BayUnit::rebuild()
             {
                 const int i = (int) keys.size();
                 keys.push_back (std::make_unique<ParamKnob> (proc, slotIndex (slot, SP0 + k), slot, k, kl));
-                keys.back()->placeAt ({ 37.0f + (float) (i % 2) * 62.0f, 48.0f + (float) (i / 2) * 57.0f });
+                keys.back()->placeAt ({ 35.0f + (float) (i % 2) * 62.0f, 42.0f + (float) (i / 2) * 57.0f });
                 addAndMakeVisible (*keys.back());
             }
         KnobLook ml;
         ml.r = 9.0f; ml.label = false; ml.valueTag = false;
         mixKnob = std::make_unique<ParamKnob> (proc, slotIndex (slot, SMix), slot, kParamsPerSlot, ml);
         mixKnob->setLabel ("Mix");
-        mixKnob->placeAt ({ face().getRight() - 21.0f, face().getBottom() - 18.0f });
+        mixKnob->placeAt ({ face().getRight() - 21.0f, face().getBottom() - 16.0f });
         addAndMakeVisible (*mixKnob);
     }
     power.setVisible (type > 0);
@@ -93,11 +93,12 @@ void BayUnit::paint (juce::Graphics& g)
     if (type <= 0)
     {
         const float cx = (float) getWidth() * 0.5f, cy = (float) getHeight() * 0.5f;
-        stencil (g, "BAY " + juce::String (slot + 1).paddedLeft ('0', 2), cx, cy - 12.0f, 10.0f, juce::Justification::centred, palette::ink, 1.0f, 0.12f);
-        stencil (g, "VACANT", cx, cy + 4.0f, 7.8f, juce::Justification::centred, palette::ink, 0.8f, 0.18f);
-        g.setColour (palette::ink.withAlpha (0.5f));
-        g.drawLine (cx - 26.0f, cy + 16.0f, cx + 26.0f, cy + 16.0f, 0.8f);
-        stencil (g, "INSERT MODULE", cx, cy + 26.0f, 7.0f, juce::Justification::centred, palette::ink, 0.75f, 0.08f);
+        stencil (g, "BAY " + juce::String (slot + 1).paddedLeft ('0', 2), cx, cy - 13.0f, 11.0f, juce::Justification::centred, palette::ink, 1.0f, 0.12f);
+        stencil (g, "VACANT", cx, cy + 4.0f, 8.6f, juce::Justification::centred, palette::ink, 0.8f, 0.18f);
+        g.setColour (palette::ink.withAlpha (0.55f));
+        g.drawLine (cx - 30.0f, cy + 16.0f, cx + 30.0f, cy + 16.0f, 0.8f);
+        g.fillEllipse (cx - 1.5f, cy + 14.5f, 3.0f, 3.0f);
+        stencil (g, "INSERT MODULE", cx, cy + 27.0f, 7.8f, juce::Justification::centred, palette::ink, 0.75f, 0.08f);
         return;
     }
     thumbscrew (g, { f.getX() + 9.0f, f.getY() + 11.0f });
@@ -115,9 +116,9 @@ void BayUnit::paint (juce::Graphics& g)
     g.setColour (palette::ink);
     g.drawText (moduleInfo (type).shortName, Rc (np.getX() + 21.0f, np.getY(), np.getWidth() - 34.0f, np.getHeight()), juce::Justification::centredLeft, false);
     jewel (g, { np.getRight() - 7.0f, np.getCentreY() }, 3.0f, juce::Colour (0xffff2e14), on);
-    stencil (g, "PWR", f.getX() + 23.0f, f.getBottom() - 17.0f, 7.0f, juce::Justification::left);
-    stencil (g, "MIX", f.getRight() - 35.0f, f.getBottom() - 18.0f, 7.0f, juce::Justification::right);
-    pullHandle (g, f.getCentreX() - 13.0f, f.getCentreX() + 9.0f, f.getBottom() - 9.0f);
+    stencil (g, "PWR", f.getX() + 23.0f, f.getBottom() - 15.0f, 7.0f, juce::Justification::left);
+    stencil (g, "MIX", f.getRight() - 35.0f, f.getBottom() - 16.0f, 7.0f, juce::Justification::right);
+    pullHandle (g, f.getCentreX() - 13.0f, f.getCentreX() + 7.0f, f.getBottom() - 7.0f);
 }
 
 void BayUnit::paintOverChildren (juce::Graphics& g)
@@ -131,7 +132,7 @@ void BayUnit::paintOverChildren (juce::Graphics& g)
     if (selected || dragOver)
     {
         g.setColour (dragOver ? palette::brand : palette::red);
-        g.drawRoundedRectangle ((type > 0 ? f : getLocalBounds().toFloat().reduced (3.0f)).expanded (type > 0 ? 2.0f : 0.0f), 4.0f, 1.6f);
+        g.drawRoundedRectangle (f.expanded (2.0f), 4.0f, 2.0f);
     }
 }
 
@@ -275,7 +276,7 @@ void SlotDetail::rebuild()
     mixKnob.reset(); outKnob.reset(); power.reset();
     sendsShown = showSends();
 
-    dial.setBounds (Rc (2.0f * (moduleDialR + 14.0f), 2.0f * (moduleDialR + 14.0f) + 14.0f)
+    dial.setBounds (Rc (2.0f * (moduleDialR + 20.0f), 2.0f * (moduleDialR + 20.0f) + 14.0f)
                         .withCentre (L (moduleDial).translated (0.0f, -7.0f)).getSmallestIntegerContainer());
     if (type > 0)
     {
@@ -323,7 +324,7 @@ void SlotDetail::rebuild()
     }
     captureButton.placeAt (L (captureBtn));
     captureButton.setVisible (type == (int) ModuleType::FormantFreeze);
-    backButton.setBounds (Rc (90.0f, 18.0f).withCentre (L ({ dividerX + 60.0f, detailPlate.getY() + 2.0f })).toNearestInt());
+    backButton.setBounds (Rc (90.0f, 18.0f).withCentre (L ({ 960.0f, 500.0f })).toNearestInt());
     backButton.setVisible (slot >= kMainSlots);
     for (int i = 0; i < 6; ++i)
     {
@@ -360,10 +361,7 @@ void SlotDetail::tick()
 void SlotDetail::paint (juce::Graphics& g)
 {
     using namespace layout;
-    const float x = dividerX - (float) getX();
-    g.setColour (palette::ink.withAlpha (0.6f));
-    g.drawLine (x, 18.0f, x, (float) getHeight() - 12.0f, 0.8f);
-    if (type > 0) mil::stencil (g, "PWR", L (detailPower).x - 11.0f, L (detailPower).y, 7.4f, juce::Justification::right);
+    if (type > 0) mil::stencil (g, "PWR", L (detailPower).x, L (detailPower).y - 25.0f, 8.6f, juce::Justification::centred);
     if (sendsShown)
     {
         const auto a = sendsArea.translated ((float) -getX(), (float) -getY());
@@ -373,17 +371,15 @@ void SlotDetail::paint (juce::Graphics& g)
             mil::stencil (g, names[p], a.getX(), a.getY() + 18.0f + (float) p * 38.0f, 7.6f, juce::Justification::left, palette::ink, 1.0f, 0.08f);
     }
     if (type <= 0)
-        mil::stencil (g, "TURN THE MODULE SELECTOR TO FIT A UNIT IN THIS BAY", L ({ 620.0f, 542.0f }).x, L ({ 620.0f, 542.0f }).y, 9.0f,
-                      juce::Justification::centred, palette::ink, 0.8f, 0.12f);
+        mil::stencil (g, "TURN THE MODULE SELECTOR TO FIT A UNIT IN THIS BAY", L (vacantHint).x, L (vacantHint).y, 9.0f,
+                      juce::Justification::centred, palette::ink, 0.85f, 0.1f);
 }
 
 void SlotDetail::ModuleDial::paint (juce::Graphics& g)
 {
     const Pt c ((float) getWidth() * 0.5f, (float) getHeight() * 0.5f + 7.0f);
-    mil::stencil (g, "MODULE", c.x, c.y - layout::moduleDialR - 17.0f, 8.8f, juce::Justification::centred, palette::ink, 1.0f, 0.12f);
-    juce::StringArray labels;
-    for (int t = 0; t < kNumModuleTypes; ++t) labels.add (moduleAbbrev (t));
-    mil::bigDial (g, c, layout::moduleDialR, (float) std::max (0, owner.type) / (float) kNumModuleTypes, labels);
+    mil::stencil (g, "MODULE", c.x, c.y - layout::moduleDialR - 14.0f, 9.0f, juce::Justification::centred, palette::ink, 1.0f, 0.06f);
+    mil::selectorDial (g, c, layout::moduleDialR, -(float) std::max (0, owner.type) / (float) kNumModuleTypes, kNumModuleTypes);
 }
 
 void SlotDetail::ModuleDial::mouseDown (const juce::MouseEvent&)

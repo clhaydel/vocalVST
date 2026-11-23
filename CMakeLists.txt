@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(HarshVox VERSION 0.3.0 LANGUAGES C CXX)   # bump per release; see CHANGELOG.md
+project(HarshVox VERSION 0.4.0 LANGUAGES C CXX)   # bump per release; see CHANGELOG.md
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -68,7 +68,7 @@ if(HV_BUILD_PLUGIN)
 
     juce_add_binary_data(HarshVoxData SOURCES
         resources/fonts/SpaceGrotesk-Medium.ttf resources/fonts/DMMono-Regular.ttf
-        resources/fonts/IBMPlexSansCondensed-Bold.ttf resources/fonts/IBMPlexMono-Bold.ttf
+        resources/fonts/IBMPlexSansCondensed-Bold.ttf resources/fonts/IBMPlexSans-Bold.ttf resources/fonts/IBMPlexMono-Bold.ttf
         resources/textures/relief_normal.jpg resources/textures/chips.jpg resources/textures/chips_blur.jpg
         resources/textures/streaks.jpg resources/textures/specks.jpg resources/textures/scratches.jpg
         resources/textures/fingerprints.jpg resources/textures/rust.jpg)
